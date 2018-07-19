@@ -80,34 +80,25 @@ struct TelemetryWriter {
 	last_time: Option<time::Instant>,
 }
 
-/// Every two minutes we reconnect to the telemetry server otherwise we don't get notified
-/// of a flakey connection that has been dropped and needs to be reconnected. We can remove
-/// this once we introduce a keepalive ping/pong.
-const RECONNECT_PERIOD: u64 = 120;
+const PING_PERIOD: u64 = 20;
 
 impl TelemetryWriter {
 	fn ensure_connected(&mut self) {
 		let mut client = self.out.lock();
 
-		let controlled_disconnect = if let Some(t) = self.last_time {
-			if t.elapsed().as_secs() > RECONNECT_PERIOD && client.is_some() {
-				trace!(target: "telemetry", "Performing controlled drop of the telemetry connection.");
-				let _ = client.as_mut().and_then(|socket|
-					socket.send_message(&ws::Message::text("{\"msg\":\"system.reconnect\"}")).ok()
-				);
-				*client = None;
-				true
-			} else {
-				false
+		if let Some(t) = self.last_time {
+			if t.elapsed().as_secs() > PING_PERIOD {
+				trace!(target: "telemetry", "Pinging...");
+				if client.as_mut().and_then(|socket|
+					socket.send_message(&ws::Message::ping(vec![])).ok()
+				).is_none() {
+					*client = None;
+				}
 			}
-		} else {
-			false
-		};
+		}
 
 		let just_connected = if client.is_none() {
-			if !controlled_disconnect {
-				info!(target: "telemetry", "Connection dropped unexpectedly. Reconnecting to telemetry server...");
-			}
+			info!(target: "telemetry", "Connection dropped unexpectedly. Reconnecting to telemetry server...");
 			*client = ws::ClientBuilder::new(&self.config.url).ok().and_then(|mut x| x.connect(None).ok());
 			client.is_some()
 		} else {
@@ -115,7 +106,7 @@ impl TelemetryWriter {
 		};
 
 		drop(client);
-		if just_connected && !controlled_disconnect {
+		if just_connected {
 			self.last_time = Some(time::Instant::now());
 			info!("Reconnected to telemetry server: {}", self.config.url);
 			(self.config.on_connect)();
