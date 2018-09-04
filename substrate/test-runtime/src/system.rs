@@ -20,7 +20,7 @@
 use rstd::prelude::*;
 use runtime_io::{storage_root, enumerated_trie_root};
 use runtime_support::storage::{self, StorageValue, StorageMap};
-use runtime_primitives::traits::{Hash as HashT, BlakeTwo256};
+use runtime_primitives::traits::{Hash as HashT, BlakeTwo256, Digest};
 use runtime_primitives::{ApplyError, ApplyOutcome, ApplyResult};
 use codec::{KeyedVec, Encode};
 use super::{AccountId, BlockNumber, Extrinsic, H256 as Hash, Block, Header};
@@ -36,6 +36,7 @@ storage_items! {
 	// The current block number being processed. Set by `execute_block`.
 	Number: b"sys:num" => required BlockNumber;
 	ParentHash: b"sys:pha" => required Hash;
+	NewAuthoritiesSet: b"sys:newa" => Vec<::primitives::AuthorityId>;
 }
 
 pub fn balance_of(who: AccountId) -> u64 {
@@ -101,12 +102,17 @@ pub fn finalise_block() -> Header {
 	let parent_hash = <ParentHash>::take();
 	let storage_root = BlakeTwo256::storage_root();
 
+	let mut digest = ::Digest::default();
+	if let Some(new_authorities_set) = <NewAuthoritiesSet>::take() {
+		digest.push(::AuthoritiesChange(new_authorities_set));
+	}
+
 	Header {
 		number,
 		extrinsics_root,
 		state_root: storage_root,
 		parent_hash,
-		digest: Default::default(),
+		digest,
 	}
 }
 
@@ -114,13 +120,20 @@ fn execute_transaction_backend(utx: &Extrinsic) -> ApplyResult {
 	use runtime_primitives::traits::BlindCheckable;
 
 	// check signature
-	let utx = match utx.clone().check() {
+	let tx = match utx.clone().check() {
 		Ok(tx) => tx,
 		Err(_) => return Err(ApplyError::BadSignature),
 	};
 
-	let tx: ::Transfer = utx.transfer;
+	match tx {
+		Extrinsic::Transfer(transfer, _) =>
+			execute_transfer_backend(transfer),
+		Extrinsic::ChangeAuthorities(new_authorities) =>
+			execute_change_authorities_backend(new_authorities),
+	}
+}
 
+fn execute_transfer_backend(tx: ::Transfer) -> ApplyResult {
 	// check nonce
 	let nonce_key = tx.from.to_keyed_vec(NONCE_OF);
 	let expected_nonce: u64 = storage::get_or(&nonce_key, 0);
@@ -143,6 +156,20 @@ fn execute_transaction_backend(utx: &Extrinsic) -> ApplyResult {
 	let to_balance: u64 = storage::get_or(&to_balance_key, 0);
 	storage::put(&from_balance_key, &(from_balance - tx.amount));
 	storage::put(&to_balance_key, &(to_balance + tx.amount));
+	Ok(ApplyOutcome::Success)
+}
+
+fn execute_change_authorities_backend(new_authorities: Vec<::primitives::AuthorityId>) -> ApplyResult {
+	storage::unhashed::kill_prefix(AUTHORITY_AT);
+
+	<NewAuthoritiesSet>::put(new_authorities.clone());
+
+	let authorities_count = new_authorities.len() as u32;
+	storage::unhashed::put(AUTHORITY_COUNT, &authorities_count);
+	for (i, new_authority) in new_authorities.into_iter().enumerate() {
+		storage::unhashed::put(&(i as u32).to_keyed_vec(AUTHORITY_AT), &new_authority);
+	}
+
 	Ok(ApplyOutcome::Success)
 }
 
@@ -186,7 +213,7 @@ mod tests {
 
 	fn construct_signed_tx(tx: Transfer) -> Extrinsic {
 		let signature = Keyring::from_raw_public(tx.from.0).unwrap().sign(&tx.encode()).into();
-		Extrinsic { transfer: tx, signature }
+		Extrinsic::Transfer(tx, signature)
 	}
 
 	#[test]
@@ -231,7 +258,7 @@ mod tests {
 				// state_root: hex!("0425393fd07e2a806cfd7e990ee91dc92fe6bba34eab2bf45d5be7d67e24d467").into(),
 				// Keccak
 				state_root: hex!("0dd8210adaf581464cc68555814a787ed491f8c608d0a0dbbf2208a6d44190b1").into(),
-				extrinsics_root: hex!("951508f2cc0071500a74765ab0fb2f280fdcdd329d5f989dda675010adee99d6").into(),
+				extrinsics_root: hex!("e68d1a6b6ee1783aa99f2de55500ce2d5c1ce49d0315b3d4bc00b9f7ebbf6ede").into(),
 				digest: Digest { logs: vec![], },
 			},
 			extrinsics: vec![
@@ -259,7 +286,7 @@ mod tests {
 				// state_root: hex!("e32dd1d84d9133ca48078d2d83f2b0db19f9d47229ba98bf5ced0e9f86fac2c7").into(),
 				// Keccak
 				state_root: hex!("c93f2fd494c386fa32ee76b6198a7ccf5db12c02c3a79755fd2d4646ec2bf8d7").into(),
-				extrinsics_root: hex!("3563642676d7e042c894eedc579ba2d6eeedf9a6c66d9d557599effc9f674372").into(),
+				extrinsics_root: hex!("ec66f07412f65b456871a3d3206a1ad1213b9b122b0da25bdef153f2612f47a4").into(),
 				digest: Digest { logs: vec![], },
 			},
 			extrinsics: vec![

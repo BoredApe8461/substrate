@@ -448,8 +448,8 @@ pub mod tests {
 			let xt = uxt.clone().check()?;
 			Ok(VerifiedTransaction {
 				hash,
-				sender: xt.transfer.from,
-				nonce: xt.transfer.nonce,
+				sender: xt.transfer().from,
+				nonce: xt.transfer().nonce,
 			})
 		}
 
@@ -458,7 +458,7 @@ pub mod tests {
 			let next_index = nonce_cache.entry(sender)
 				.or_insert_with(|| index(at, sender));
 
-			let result = match xt.original.transfer.nonce.cmp(&next_index) {
+			let result = match xt.original.transfer().nonce.cmp(&next_index) {
 				Ordering::Greater => Readiness::Future,
 				Ordering::Equal => Readiness::Ready,
 				Ordering::Less => Readiness::Stale,
@@ -475,12 +475,12 @@ pub mod tests {
 		}
 
 		fn compare(old: &VerifiedFor<Self>, other: &VerifiedFor<Self>) -> Ordering {
-			old.original.transfer.nonce.cmp(&other.original.transfer.nonce)
+			old.original.transfer().nonce.cmp(&other.original.transfer().nonce)
 		}
 
 		fn choose(old: &VerifiedFor<Self>, new: &VerifiedFor<Self>) -> scoring::Choice {
 			assert!(new.verified.sender == old.verified.sender, "Scoring::choose called with transactions from different senders");
-			if old.original.transfer.nonce == new.original.transfer.nonce {
+			if old.original.transfer().nonce == new.original.transfer().nonce {
 				return scoring::Choice::RejectNew;
 			}
 			scoring::Choice::InsertNew
@@ -492,7 +492,7 @@ pub mod tests {
 			_change: scoring::Change<()>
 		) {
 			for i in 0..xts.len() {
-				scores[i] = xts[i].original.transfer.amount;
+				scores[i] = xts[i].original.transfer().amount;
 			}
 		}
 
@@ -520,10 +520,10 @@ pub mod tests {
 			amount: 1,
 		};
 		let signature = transfer.using_encoded(|e| who.sign(e));
-		Extrinsic {
+		Extrinsic::Transfer(
 			transfer,
-			signature: signature.into(),
-		}
+			signature.into(),
+		)
 	}
 
 	fn pool() -> Pool<TestApi> {
@@ -536,7 +536,7 @@ pub mod tests {
 		assert_eq!(209, index(&BlockId::number(0), Alice.to_raw_public().into()));
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 209)).unwrap();
 
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![(Alice.to_raw_public().into(), 209)]);
 	}
 
@@ -546,7 +546,7 @@ pub mod tests {
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 209)).unwrap();
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 210)).unwrap();
 
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![(Alice.to_raw_public().into(), 209), (Alice.to_raw_public().into(), 210)]);
 	}
 
@@ -555,7 +555,7 @@ pub mod tests {
 		let pool = pool();
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 208)).unwrap();
 
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![]);
 	}
 
@@ -564,11 +564,11 @@ pub mod tests {
 		let pool = pool();
 
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 210)).unwrap();
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![]);
 
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 209)).unwrap();
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![(Alice.to_raw_public().into(), 209), (Alice.to_raw_public().into(), 210)]);
 	}
 
@@ -578,12 +578,12 @@ pub mod tests {
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 209)).unwrap();
 		pool.submit_one(&BlockId::number(0), uxt(Alice, 210)).unwrap();
 
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![(Alice.to_raw_public().into(), 209), (Alice.to_raw_public().into(), 210)]);
 
 		pool.retry_verification(&BlockId::number(1), Alice.to_raw_public().into()).unwrap();
 
-		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer.nonce)).collect()).unwrap();
+		let pending: Vec<_> = pool.cull_and_get_pending(&BlockId::number(0), |p| p.map(|a| (*a.sender(), a.original.transfer().nonce)).collect()).unwrap();
 		assert_eq!(pending, vec![(Alice.to_raw_public().into(), 209), (Alice.to_raw_public().into(), 210)]);
 	}
 

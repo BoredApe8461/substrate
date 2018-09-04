@@ -14,6 +14,7 @@ futures = "0.1.17"
 ed25519 = { path = "../ed25519" }
 slog = "^2"
 heapsize = "0.4"
+bitflags = "1.0"
 substrate-bft = { path = "../bft" }
 substrate-codec = { path = "../codec" }
 substrate-executor = { path = "../executor" }

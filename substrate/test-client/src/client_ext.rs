@@ -18,7 +18,10 @@
 
 use client::{self, Client};
 use keyring::Keyring;
+use primitives::AuthorityId;
 use runtime_primitives::StorageMap;
+use runtime_primitives::traits::{Header, Digest, DigestItem};
+use runtime_primitives::generic::BlockId;
 use runtime::genesismap::{GenesisConfig, additional_storage_with_genesis};
 use executor::NativeExecutor;
 use runtime;
@@ -43,8 +46,13 @@ impl TestClient for Client<Backend, Executor, runtime::Block> {
 	}
 
 	fn justify_and_import(&self, origin: client::BlockOrigin, block: runtime::Block) -> client::error::Result<()> {
-		let justification = fake_justify(&block.header);
-		let justified = self.check_justification(block.header, justification)?;
+		let authorities = self.authorities_at(&BlockId::Number(block.header.number - 1)).unwrap();
+		let justification = fake_justify(authorities, &block.header);
+		let authorities_change_justification = block.header.digest().logs().iter()
+			.find(|log| log.as_authorities_change().is_some())
+			.map(|_| ());
+
+		let justified = self.check_justification(block.header, justification, authorities_change_justification)?;
 		self.import_block(origin, justified, Some(block.extrinsics))?;
 
 		Ok(())
@@ -61,21 +69,18 @@ impl TestClient for Client<Backend, Executor, runtime::Block> {
 /// headers.
 /// TODO: remove this in favor of custom verification pipelines for the
 /// client
-fn fake_justify(header: &runtime::Header) -> bft::UncheckedJustification<runtime::Hash> {
+fn fake_justify(authorities: Vec<AuthorityId>, header: &runtime::Header) -> bft::UncheckedJustification<runtime::Hash> {
 	let hash = header.hash();
-	let authorities = vec![
-		Keyring::Alice.into(),
-		Keyring::Bob.into(),
-		Keyring::Charlie.into(),
-	];
 
 	bft::UncheckedJustification::new(
 		hash,
-		authorities.iter().map(|key| {
+		authorities.into_iter().map(|key| {
 			let msg = bft::sign_message::<runtime::Block>(
 				::rhododendron::Vote::Commit(1, hash).into(),
-				key,
-				header.parent_hash
+				&Keyring::from_raw_public(key.0)
+					.expect("Only Keyring authorities are expected in test-runtime")
+					.pair(),
+				header.parent_hash,
 			);
 
 			match msg {
@@ -85,6 +90,7 @@ fn fake_justify(header: &runtime::Header) -> bft::UncheckedJustification<runtime
 		}).collect(),
 		1,
 	)
+
 }
 
 fn genesis_config() -> GenesisConfig {

@@ -119,3 +119,24 @@ fn blocks_are_not_announced_by_light_nodes() {
 	assert_eq!(net.peer(1).client.backend().blockchain().info().unwrap().best_number, 1);
 	assert_eq!(net.peer(2).client.backend().blockchain().info().unwrap().best_number, 0);
 }
+
+#[test]
+fn additional_block_data_is_fetched_when_required() {
+	::env_logger::init().ok();
+	let mut net = TestNet::new(2);
+	net.peer(0).push_blocks(5, false);
+	net.peer(0).push_block_with_new_authorities(vec![
+		Keyring::Bob.to_raw_public().into(),
+		Keyring::Charlie.to_raw_public().into(),
+		Keyring::Dave.to_raw_public().into(),
+		Keyring::Eve.to_raw_public().into(),
+		Keyring::Ferdie.to_raw_public().into(),
+	]);
+	net.peer(0).push_blocks(5, false);
+
+	assert_eq!(net.peer(0).client.backend().blockchain().info().unwrap().best_number, 11);
+
+	net.sync();
+
+	assert_eq!(net.peer(1).client.backend().blockchain().info().unwrap().best_number, 11);
+}

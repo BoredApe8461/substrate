@@ -102,7 +102,10 @@ pub fn import_blocks<F, E, R>(config: FactoryFullConfiguration<F>, exit: E, mut 
 		}
 		match SignedBlock::decode(&mut input) {
 			Some(block) => {
-				let header = client.check_justification(block.block.header, block.justification.into())?;
+				let header = client.check_justification(
+					block.block.header,
+					block.justification.into(),
+					block.authorities_justification.map(Into::into))?;
 				client.import_block(BlockOrigin::File, header, Some(block.block.extrinsics))?;
 			},
 			None => {

@@ -455,6 +455,8 @@ pub struct SignedBlock<Header, Extrinsic, Hash> {
 	pub block: Block<Header, Extrinsic>,
 	/// Block header justification.
 	pub justification: Justification<Hash>,
+	/// Authorities justification.
+	pub authorities_justification: Option<()>,
 }
 
 #[cfg(test)]

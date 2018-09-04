@@ -378,7 +378,9 @@ where
 			let hash = header.hash();
 			let parent_hash = *header.parent_hash();
 
-			self.states.write().insert(hash, operation.new_state.unwrap_or_else(|| old_state.clone()));
+			let new_state = operation.new_state.unwrap_or_else(|| old_state.clone());
+
+			self.states.write().insert(hash, new_state);
 			self.blockchain.insert(hash, header, justification, body, pending_block.is_best);
 			// dumb implementation - store value for each block
 			if pending_block.is_best {

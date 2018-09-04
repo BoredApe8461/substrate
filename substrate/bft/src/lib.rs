@@ -198,7 +198,13 @@ pub trait Proposer<B: Block> {
 /// Block import trait.
 pub trait BlockImport<B: Block> {
 	/// Import a block alongside its corresponding justification.
-	fn import_block(&self, block: B, justification: Justification<B::Hash>, authorities: &[AuthorityId]) -> bool;
+	fn import_block(
+		&self,
+		block: B,
+		justification: Justification<B::Hash>,
+		authorities_justification: Option<()>,
+		authorities: &[AuthorityId]
+	) -> bool;
 }
 
 /// Trait for getting the authorities at a given block.
@@ -386,6 +392,7 @@ impl<B, P, I, InStream, OutSink> Future for BftFuture<B, P, I, InStream, OutSink
 			let import_ok = self.import.import_block(
 				justified_block,
 				committed.justification,
+				None, // TODO: pass justified headers change
 				&self.inner.context().authorities
 			);
 
@@ -779,7 +786,13 @@ mod tests {
 	}
 
 	impl BlockImport<TestBlock> for FakeClient {
-		fn import_block(&self, block: TestBlock, _justification: Justification<H256>, _authorities: &[AuthorityId]) -> bool {
+		fn import_block(
+			&self,
+			block: TestBlock,
+			_justification: Justification<H256>,
+			_authorities_justification: Option<()>,
+			_authorities: &[AuthorityId]
+		) -> bool {
 			assert!(self.imported_heights.lock().insert(block.header.number));
 			true
 		}

@@ -431,7 +431,7 @@ pub mod tests {
 	struct DummyFetchChecker { ok: bool }
 
 	impl ExecuteInContext<Block> for DummyExecutor {
-		fn execute_in_context<F: Fn(&mut ::protocol::Context<Block>)>(&self, _closure: F) {}
+		fn execute_in_context<F: FnOnce(&mut ::protocol::Context<Block>)>(&self, _closure: F) {}
 	}
 
 	impl FetchChecker<Block> for DummyFetchChecker {

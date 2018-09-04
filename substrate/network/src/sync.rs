@@ -20,7 +20,7 @@ use protocol::Context;
 use network_libp2p::{Severity, NodeIndex};
 use client::{BlockStatus, BlockOrigin, ClientInfo};
 use client::error::Error as ClientError;
-use blocks::{self, BlockCollection};
+use blocks::{self, BlockCollection, PausedBlocks};
 use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, As, NumberFor};
 use runtime_primitives::generic::BlockId;
 use message::{self, generic::Message as GenericMessage};
@@ -55,7 +55,6 @@ pub struct ChainSync<B: BlockT> {
 	blocks: BlockCollection<B>,
 	best_queued_number: NumberFor<B>,
 	best_queued_hash: B::Hash,
-	required_block_attributes: message::BlockAttributes,
 	import_queue: Arc<ImportQueue<B>>,
 }
 
@@ -88,10 +87,9 @@ impl<B: BlockT> ChainSync<B> {
 		ChainSync {
 			genesis_hash: info.chain.genesis_hash,
 			peers: HashMap::new(),
-			blocks: BlockCollection::new(),
+			blocks: BlockCollection::new(required_block_attributes),
 			best_queued_hash: info.best_queued_hash.unwrap_or(info.chain.best_hash),
 			best_queued_number: info.best_queued_number.unwrap_or(info.chain.best_number),
-			required_block_attributes,
 			import_queue,
 		}
 	}
@@ -175,17 +173,17 @@ impl<B: BlockT> ChainSync<B> {
 		let new_blocks = if let Some(ref mut peer) = self.peers.get_mut(&who) {
 			match peer.state {
 				PeerSyncState::DownloadingNew(start_block) => {
-					self.blocks.clear_peer_download(who);
+					let blocks = self.blocks.clear_peer_download(who, response.blocks);
 					peer.state = PeerSyncState::Available;
 
-					self.blocks.insert(start_block, response.blocks, who);
+					self.blocks.insert(start_block, blocks, who);
 					self.blocks.drain(self.best_queued_number + As::sa(1))
 				},
 				PeerSyncState::DownloadingStale(_) => {
 					peer.state = PeerSyncState::Available;
 					response.blocks.into_iter().map(|b| blocks::BlockData {
 						origin: who,
-						block: b
+						block: b,
 					}).collect()
 				},
 				PeerSyncState::AncestorSearch(n) => {
@@ -238,6 +236,12 @@ impl<B: BlockT> ChainSync<B> {
 		let origin = if is_best.unwrap_or_default() { BlockOrigin::NetworkBroadcast } else { BlockOrigin::NetworkInitialSync };
 		let import_queue = self.import_queue.clone();
 		import_queue.import_blocks(self, protocol, (origin, new_blocks));
+		self.maintain_sync(protocol);
+	}
+
+	/// Request required data for the first block of the set and postpone import of the set until data is received.
+	pub fn return_paused_blocks(&mut self, protocol: &mut Context<B>, paused_blocks: PausedBlocks<B>) {
+		self.blocks.return_paused_blocks(paused_blocks);
 		self.maintain_sync(protocol);
 	}
 
@@ -306,7 +310,7 @@ impl<B: BlockT> ChainSync<B> {
 	}
 
 	pub(crate) fn peer_disconnected(&mut self, protocol: &mut Context<B>, who: NodeIndex) {
-		self.blocks.clear_peer_download(who);
+		self.blocks.clear_peer_download(who, vec![]);
 		self.peers.remove(&who);
 		self.maintain_sync(protocol);
 	}
@@ -343,7 +347,7 @@ impl<B: BlockT> ChainSync<B> {
 				PeerSyncState::Available => {
 					let request = message::generic::BlockRequest {
 						id: 0,
-						fields: self.required_block_attributes.clone(),
+						fields: self.blocks.required_block_attributes(),
 						from: message::FromBlock::Hash(*hash),
 						to: None,
 						direction: message::Direction::Ascending,
@@ -371,11 +375,11 @@ impl<B: BlockT> ChainSync<B> {
 			trace!(target: "sync", "Considering new block download from {}, common block is {}, best is {:?}", who, common_number, peer.best_number);
 			match peer.state {
 				PeerSyncState::Available => {
-					if let Some(range) = self.blocks.needed_blocks(who, MAX_BLOCKS_TO_REQUEST, peer.best_number, common_number) {
+					if let Some((fields, range)) = self.blocks.needed_blocks(who, MAX_BLOCKS_TO_REQUEST, peer.best_number, common_number) {
 						trace!(target: "sync", "Requesting blocks from {}, ({} to {})", who, range.start, range.end);
 						let request = message::generic::BlockRequest {
 							id: 0,
-							fields: self.required_block_attributes.clone(),
+							fields: fields,
 							from: message::FromBlock::Number(range.start),
 							to: None,
 							direction: message::Direction::Ascending,

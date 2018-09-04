@@ -16,6 +16,7 @@
 
 //! Network packet message types. These get serialized and put into the lower level protocol payload.
 
+use client::AdditionalBlockData;
 use runtime_primitives::traits::{Block as BlockT, Header as HeaderT};
 use codec::{Encode, Decode, Input, Output};
 pub use self::generic::{
@@ -92,6 +93,7 @@ pub type Transactions<E> = Vec<E>;
 /// Bits of block data and associated artefacts to request.
 bitflags! {
 	/// Node roles bitmask.
+	#[derive(Default)]
 	pub struct BlockAttributes: u8 {
 		/// Include block header.
 		const HEADER = 0b00000001;
@@ -103,6 +105,8 @@ bitflags! {
 		const MESSAGE_QUEUE = 0b00001000;
 		/// Include a justification for the block.
 		const JUSTIFICATION = 0b00010000;
+		/// Include an authorities justification for the block.
+		const AUTHORITIES_JUSTIFICATION = 0b00100000;
 	}
 }
 
@@ -115,6 +119,16 @@ impl Encode for BlockAttributes {
 impl Decode for BlockAttributes {
 	fn decode<I: Input>(input: &mut I) -> Option<Self> {
 		Self::from_bits(input.read_byte()?)
+	}
+}
+
+impl From<AdditionalBlockData> for BlockAttributes {
+	fn from(data: AdditionalBlockData) -> Self {
+		let mut attr = BlockAttributes::empty();
+		if data.contains(AdditionalBlockData::AUTHORITIES_JUSTIFICATION) {
+			attr |= BlockAttributes::AUTHORITIES_JUSTIFICATION;
+		}
+		attr
 	}
 }
 
@@ -171,6 +185,8 @@ pub mod generic {
 		pub message_queue: Option<Vec<u8>>,
 		/// Justification if requested.
 		pub justification: Option<Justification<Hash>>,
+		/// Justification of new authorities set, if present and requested.
+		pub authorities_justification: Option<()>,
 	}
 
 	/// Identifies starting point of a block sequence.

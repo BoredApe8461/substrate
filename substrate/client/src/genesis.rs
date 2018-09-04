@@ -66,7 +66,7 @@ mod tests {
 			let signature = Pair::from(Keyring::from_public(Public::from_raw(tx.from.0)).unwrap())
 				.sign(&tx.encode()).into();
 
-			Extrinsic { transfer: tx, signature }
+			Extrinsic::Transfer(tx, signature)
 		}).collect::<Vec<_>>();
 
 		let extrinsics_root = ordered_trie_root::<KeccakHasher, _, _>(transactions.iter().map(Encode::encode)).into();

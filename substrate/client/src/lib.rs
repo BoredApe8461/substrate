@@ -41,6 +41,7 @@ extern crate hashdb;
 extern crate rlp;
 extern crate heapsize;
 
+#[macro_use] extern crate bitflags;
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate log;
 #[cfg_attr(test, macro_use)] extern crate substrate_executor as executor;
@@ -64,7 +65,7 @@ pub use client::{
 	new_in_mem,
 	BlockBody, BlockStatus, BlockOrigin, BlockchainEventStream, BlockchainEvents,
 	Client, ClientInfo, ChainHead,
-	ImportResult, JustifiedHeader,
+	ImportResult, JustifiedHeader, AdditionalBlockData,
 };
 pub use notifications::{StorageEventStream, StorageChangeSet};
 pub use state_machine::ExecutionStrategy;

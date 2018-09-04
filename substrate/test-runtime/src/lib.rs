@@ -55,10 +55,10 @@ pub mod system;
 use rstd::prelude::*;
 use codec::{Encode, Decode};
 
-use runtime_primitives::traits::{BlindCheckable, BlakeTwo256};
+use runtime_primitives::traits::{BlindCheckable, BlakeTwo256, DigestItem, AuthoritiesChangeDigest};
 use runtime_primitives::Ed25519Signature;
 use runtime_version::RuntimeVersion;
-pub use primitives::hash::H256;
+pub use primitives::{AuthorityId, hash::H256};
 
 /// Test runtime version.
 pub const VERSION: RuntimeVersion = RuntimeVersion {
@@ -86,19 +86,36 @@ pub struct Transfer {
 /// Extrinsic for test-runtime.
 #[derive(Clone, PartialEq, Eq, Encode, Decode)]
 #[cfg_attr(feature = "std", derive(Debug, Serialize, Deserialize))]
-pub struct Extrinsic {
-	pub transfer: Transfer,
-	pub signature: Ed25519Signature,
+pub enum Extrinsic {
+	Transfer(Transfer, Ed25519Signature),
+	ChangeAuthorities(Vec<AuthorityId>),
+}
+
+impl Extrinsic {
+	/// Returns reference to nested transfer.
+	///
+	/// Panics if this extrinsic is not a transfer.
+	pub fn transfer(&self) -> &Transfer {
+		match *self {
+			Extrinsic::Transfer(ref transfer, _) => transfer,
+			_ => panic!("Wrong test extrinsic type"),
+		}
+	}
 }
 
 impl BlindCheckable for Extrinsic {
 	type Checked = Self;
 
 	fn check(self) -> Result<Self, &'static str> {
-		if ::runtime_primitives::verify_encoded_lazy(&self.signature, &self.transfer, &self.transfer.from) {
-			Ok(self)
-		} else {
-			Err("bad signature")
+		match self {
+			Extrinsic::Transfer(transfer, signature) =>
+				if ::runtime_primitives::verify_encoded_lazy(&signature, &transfer, &transfer.from) {
+					Ok(Extrinsic::Transfer(transfer, signature))
+				} else {
+					Err("bad signature")
+				},
+			Extrinsic::ChangeAuthorities(authorities) =>
+				Ok(Extrinsic::ChangeAuthorities(authorities)),
 		}
 	}
 }
@@ -112,11 +129,32 @@ pub type BlockNumber = u64;
 /// Index of a transaction.
 pub type Index = u64;
 /// The digest of a block.
-pub type Digest = runtime_primitives::generic::Digest<()>;
+pub type Digest = runtime_primitives::generic::Digest<AuthoritiesChange>;
 /// A test block.
 pub type Block = runtime_primitives::generic::Block<Header, Extrinsic>;
 /// A test block's header.
-pub type Header = runtime_primitives::generic::Header<BlockNumber, BlakeTwo256, ()>;
+pub type Header = runtime_primitives::generic::Header<BlockNumber, BlakeTwo256, AuthoritiesChange>;
+
+/// Digest item that marks authorities set change.
+#[derive(Clone, PartialEq, Eq, Encode, Decode)]
+#[cfg_attr(feature = "std", derive(Debug, Serialize, Deserialize))]
+pub struct AuthoritiesChange(Vec<AuthorityId>);
+
+impl DigestItem for AuthoritiesChange {
+	type AuthoritiesChange = AuthoritiesChange;
+
+	fn as_authorities_change(&self) -> Option<&Self::AuthoritiesChange> {
+		Some(self)
+	}
+}
+
+impl AuthoritiesChangeDigest for AuthoritiesChange {
+	type AuthorityId = AuthorityId;
+
+	fn authorities(&self) -> &[Self::AuthorityId] {
+		&self.0
+	}
+}
 
 /// Run whatever tests we have.
 pub fn run_tests(mut input: &[u8]) -> Vec<u8> {

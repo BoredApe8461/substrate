@@ -109,7 +109,7 @@ pub trait ConsensusService<B: BlockT>: Send + Sync {
 /// Service able to execute closure in the network context.
 pub trait ExecuteInContext<B: BlockT>: Send + Sync {
 	/// Execute closure in network context.
-	fn execute_in_context<F: Fn(&mut Context<B>)>(&self, closure: F);
+	fn execute_in_context<F: FnOnce(&mut Context<B>)>(&self, closure: F);
 }
 
 /// Network protocol handler
@@ -237,7 +237,7 @@ impl<B: BlockT + 'static, S: Specialization<B>, H:ExHashT> Drop for Service<B, S
 	}
 }
 impl<B: BlockT + 'static, S: Specialization<B>, H: ExHashT> ExecuteInContext<B> for Service<B, S, H> {
-	fn execute_in_context<F: Fn(&mut ::protocol::Context<B>)>(&self, closure: F) {
+	fn execute_in_context<F: FnOnce(&mut ::protocol::Context<B>)>(&self, closure: F) {
 		self.network.with_context(self.protocol_id, |context| {
 			closure(&mut ProtocolContext::new(self.handler.protocol.context_data(), &mut NetSyncIo::new(context)))
 		});

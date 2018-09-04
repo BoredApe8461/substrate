@@ -22,6 +22,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use client;
 use client::block_builder::BlockBuilder;
+use primitives::AuthorityId;
 use runtime_primitives::traits::Block as BlockT;
 use runtime_primitives::generic::BlockId;
 use io::SyncIo;
@@ -196,12 +197,18 @@ impl Peer {
 					nonce,
 				};
 				let signature = Keyring::from_raw_public(transfer.from.0).unwrap().sign(&transfer.encode()).into();
-				builder.push(Extrinsic { transfer, signature }).unwrap();
+				builder.push(Extrinsic::Transfer(transfer, signature)).unwrap();
 				nonce = nonce + 1;
 			});
 		} else {
 			self.generate_blocks(count, |_| ());
 		}
+	}
+
+	fn push_block_with_new_authorities(&self, authorities: Vec<AuthorityId>) {
+		self.generate_blocks(1, |builder|
+			builder.push(Extrinsic::ChangeAuthorities(authorities.clone()))
+			.unwrap());
 	}
 }
 

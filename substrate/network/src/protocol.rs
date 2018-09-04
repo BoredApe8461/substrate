@@ -322,13 +322,19 @@ impl<B: BlockT, S: Specialization<B>, H: ExHashT> Protocol<B, S, H> {
 		let get_header = request.fields.contains(message::BlockAttributes::HEADER);
 		let get_body = request.fields.contains(message::BlockAttributes::BODY);
 		let get_justification = request.fields.contains(message::BlockAttributes::JUSTIFICATION);
+		let get_authorities_justification = request.fields.contains(message::BlockAttributes::AUTHORITIES_JUSTIFICATION);
 		while let Some(header) = self.context_data.chain.header(&id).unwrap_or(None) {
 			if blocks.len() >= max {
 				break;
 			}
 			let number = header.number().clone();
 			let hash = header.hash();
-			let justification = if get_justification { self.context_data.chain.justification(&BlockId::Hash(hash)).unwrap_or(None) } else { None };
+			let justification = if get_justification {
+				self.context_data.chain.justification(&BlockId::Hash(hash)).unwrap_or(None)
+			} else { None };
+			let authorities_justification = if get_authorities_justification {
+				Some(())
+			} else { None };
 			let block_data = message::generic::BlockData {
 				hash: hash,
 				header: if get_header { Some(header) } else { None },
@@ -336,6 +342,7 @@ impl<B: BlockT, S: Specialization<B>, H: ExHashT> Protocol<B, S, H> {
 				receipt: None,
 				message_queue: None,
 				justification,
+				authorities_justification,
 			};
 			blocks.push(block_data);
 			match request.direction {

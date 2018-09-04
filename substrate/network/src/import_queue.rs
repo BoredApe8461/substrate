@@ -26,9 +26,10 @@ use network_libp2p::{NodeIndex, Severity};
 
 use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, NumberFor, Zero};
 
-use blocks::BlockData;
+use blocks::{BlockData, PausedBlock, PausedBlocks};
 use chain::Client;
 use error::{ErrorKind, Error};
+use message;
 use protocol::Context;
 use service::ExecuteInContext;
 use sync::ChainSync;
@@ -201,6 +202,8 @@ fn import_thread<B: BlockT, E: ExecuteInContext<B>>(sync: Weak<RwLock<ChainSync<
 trait SyncLinkApi<B: BlockT> {
 	/// Get chain reference.
 	fn chain(&self) -> &Client<B>;
+	/// Postpone import of blocks until additional data for the first block is received.
+	fn return_paused_blocks(&mut self, paused_blocks: PausedBlocks<B>);
 	/// Block imported.
 	fn block_imported(&mut self, hash: &B::Hash, number: NumberFor<B>);
 	/// Maintain sync.
@@ -224,11 +227,13 @@ enum SyncLink<'a, B: 'a + BlockT, E: 'a + ExecuteInContext<B>> {
 
 /// Block import successful result.
 #[derive(Debug, PartialEq)]
-enum BlockImportResult<H: ::std::fmt::Debug + PartialEq, N: ::std::fmt::Debug + PartialEq> {
+enum BlockImportResult<B: BlockT> {
+	/// Justification required for importing this block.
+	AdditionalDataRequired(PausedBlocks<B>),
 	/// Imported known block.
-	ImportedKnown(H, N),
+	ImportedKnown(B::Hash, NumberFor<B>),
 	/// Imported unknown block.
-	ImportedUnknown(H, N),
+	ImportedUnknown(B::Hash, NumberFor<B>),
 }
 
 /// Block import error.
@@ -264,8 +269,9 @@ fn import_many_blocks<'a, B: BlockT>(
 	trace!(target:"sync", "Starting import of {} blocks{}", count, blocks_range);
 
 	// Blocks in the response/drain should be in ascending order.
-	for block in blocks {
-		let import_result = import_single_block(link.chain(), blocks_origin.clone(), block);
+	let mut blocks = blocks.into_iter();
+	while let Some(block) = blocks.next() {
+		let import_result = import_single_block(link.chain(), blocks_origin.clone(), block, &mut blocks);
 		let is_import_failed = import_result.is_err();
 		imported += process_import_result(link, import_result);
 		if is_import_failed {
@@ -284,11 +290,12 @@ fn import_many_blocks<'a, B: BlockT>(
 }
 
 /// Single block import function.
-fn import_single_block<B: BlockT>(
+fn import_single_block<B: BlockT, I: Iterator<Item=BlockData<B>>>(
 	chain: &Client<B>,
 	block_origin: BlockOrigin,
-	block: BlockData<B>
-) -> Result<BlockImportResult<B::Hash, <<B as BlockT>::Header as HeaderT>::Number>, BlockImportError>
+	block: BlockData<B>,
+	rest_blocks: &mut I,
+) -> Result<BlockImportResult<B>, BlockImportError>
 {
 	let origin = block.origin;
 	let block = block.block;
@@ -297,14 +304,47 @@ fn import_single_block<B: BlockT>(
 			let number = header.number().clone();
 			let hash = header.hash();
 			let parent = header.parent_hash().clone();
+			let body = block.body;
+			let message_queue = block.message_queue;
+			let authorities_justification = block.authorities_justification;
+			let receipt = block.receipt;
 
+			// cloning is required here to avoid re-downloading data when additional data is required
+			// TODO: avoid cloning (clone on demand?)
 			let result = chain.import(
 				block_origin,
-				header,
-				justification,
-				block.body,
+				header.clone(),
+				justification.clone(),
+				authorities_justification.clone(),
+				body.clone(),
 			);
+
 			match result {
+				Ok(ImportResult::AdditionalDataRequired(required)) => {
+					trace!(target: "sync", "Postponed import of block {}: additional data required({:?})",
+						number, required);
+
+					Ok(BlockImportResult::AdditionalDataRequired(PausedBlocks {
+						block: PausedBlock {
+							downloading: 0,
+							number,
+							required: required.into(),
+							block: BlockData {
+								block: message::BlockData::<B> {
+									hash,
+									header: Some(header),
+									body,
+									receipt,
+									message_queue,
+									justification: Some(justification),
+									authorities_justification,
+								},
+								origin,
+							},
+						},
+						rest: rest_blocks.collect(),
+					}))
+				},
 				Ok(ImportResult::AlreadyInChain) => {
 					trace!(target: "sync", "Block already in chain {}: {:?}", number, hash);
 					Ok(BlockImportResult::ImportedKnown(hash, number))
@@ -345,10 +385,14 @@ fn import_single_block<B: BlockT>(
 /// Process single block import result.
 fn process_import_result<'a, B: BlockT>(
 	link: &mut SyncLinkApi<B>,
-	result: Result<BlockImportResult<B::Hash, <<B as BlockT>::Header as HeaderT>::Number>, BlockImportError>
+	result: Result<BlockImportResult<B>, BlockImportError>
 ) -> usize
 {
 	match result {
+		Ok(BlockImportResult::AdditionalDataRequired(paused_blocks)) => {
+			link.return_paused_blocks(paused_blocks);
+			0
+		},
 		Ok(BlockImportResult::ImportedKnown(hash, number)) => {
 			link.block_imported(&hash, number);
 			1
@@ -378,7 +422,7 @@ fn process_import_result<'a, B: BlockT>(
 
 impl<'a, B: 'static + BlockT, E: 'a + ExecuteInContext<B>> SyncLink<'a, B, E> {
 	/// Execute closure with locked ChainSync.
-	fn with_sync<F: Fn(&mut ChainSync<B>, &mut Context<B>)>(&mut self, closure: F) {
+	fn with_sync<F: FnOnce(&mut ChainSync<B>, &mut Context<B>)>(&mut self, closure: F) {
 		match *self {
 			#[cfg(test)]
 			SyncLink::Direct(ref mut sync, ref mut protocol) =>
@@ -399,6 +443,10 @@ impl<'a, B: 'static + BlockT, E: ExecuteInContext<B>> SyncLinkApi<B> for SyncLin
 			SyncLink::Direct(_, ref protocol) => protocol.client(),
 			SyncLink::Indirect(_, ref chain, _) => *chain,
 		}
+	}
+
+	fn return_paused_blocks(&mut self, paused_blocks: PausedBlocks<B>) {
+		self.with_sync(|sync, protocol| sync.return_paused_blocks(protocol, paused_blocks))
 	}
 
 	fn block_imported(&mut self, hash: &B::Hash, number: NumberFor<B>) {
@@ -440,7 +488,7 @@ pub mod tests {
 	struct DummyExecuteInContext;
 
 	impl<B: 'static + BlockT> ExecuteInContext<B> for DummyExecuteInContext {
-		fn execute_in_context<F: Fn(&mut Context<B>)>(&self, _closure: F) { }
+		fn execute_in_context<F: FnOnce(&mut Context<B>)>(&self, _closure: F) { }
 	}
 
 	impl<B: 'static + BlockT> ImportQueue<B> for SyncImportQueue {
@@ -490,6 +538,7 @@ pub mod tests {
 
 	impl SyncLinkApi<Block> for TestLink {
 		fn chain(&self) -> &Client<Block> { &*self.chain }
+		fn return_paused_blocks(&mut self, _: PausedBlocks<Block>) { }
 		fn block_imported(&mut self, _hash: &Hash, _number: NumberFor<Block>) { self.imported += 1; }
 		fn maintain_sync(&mut self) { self.maintains += 1; }
 		fn useless_peer(&mut self, _: NodeIndex, _: &str) { self.disconnects += 1; }
@@ -510,6 +559,7 @@ pub mod tests {
 			receipt: None,
 			message_queue: None,
 			justification: client.justification(&BlockId::Number(1)).unwrap(),
+			authorities_justification: None,
 		};
 
 		(client, hash, number, BlockData { block, origin: 0 })
@@ -518,27 +568,31 @@ pub mod tests {
 	#[test]
 	fn import_single_good_block_works() {
 		let (_, hash, number, block) = prepare_good_block();
-		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block), Ok(BlockImportResult::ImportedUnknown(hash, number)));
+		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block, &mut Vec::new().into_iter()),
+			Ok(BlockImportResult::ImportedUnknown(hash, number)));
 	}
 
 	#[test]
 	fn import_single_good_known_block_is_ignored() {
 		let (client, hash, number, block) = prepare_good_block();
-		assert_eq!(import_single_block(&client, BlockOrigin::File, block), Ok(BlockImportResult::ImportedKnown(hash, number)));
+		assert_eq!(import_single_block(&client, BlockOrigin::File, block, &mut Vec::new().into_iter()),
+			Ok(BlockImportResult::ImportedKnown(hash, number)));
 	}
 
 	#[test]
 	fn import_single_good_block_without_header_fails() {
 		let (_, _, _, mut block) = prepare_good_block();
 		block.block.header = None;
-		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block), Err(BlockImportError::Disconnect(0)));
+		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block, &mut Vec::new().into_iter()),
+			Err(BlockImportError::Disconnect(0)));
 	}
 
 	#[test]
 	fn import_single_good_block_without_justification_fails() {
 		let (_, _, _, mut block) = prepare_good_block();
 		block.block.justification = None;
-		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block), Err(BlockImportError::Disconnect(0)));
+		assert_eq!(import_single_block(&test_client::new(), BlockOrigin::File, block, &mut Vec::new().into_iter()),
+			Err(BlockImportError::Disconnect(0)));
 	}
 
 	#[test]

@@ -21,7 +21,8 @@ use futures::sync::mpsc;
 use parking_lot::{Mutex, RwLock};
 use primitives::AuthorityId;
 use runtime_primitives::{bft::Justification, generic::{BlockId, SignedBlock, Block as RuntimeBlock}};
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, As, NumberFor};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, As, NumberFor,
+	Digest, DigestItem};
 use runtime_primitives::BuildStorage;
 use primitives::{KeccakHasher, RlpCodec};
 use primitives::storage::{StorageKey, StorageData};
@@ -90,6 +91,8 @@ pub struct ClientInfo<Block: BlockT> {
 /// Block import result.
 #[derive(Debug)]
 pub enum ImportResult {
+	/// Additional block data required.
+	AdditionalDataRequired(AdditionalBlockData),
 	/// Added to the import queue.
 	Queued,
 	/// Already in the import queue.
@@ -100,6 +103,14 @@ pub enum ImportResult {
 	KnownBad,
 	/// Block parent is not in the chain.
 	UnknownParent,
+}
+
+bitflags! {
+	/// Bit flags for additional block data that is required for block import.
+	pub struct AdditionalBlockData: u8 {
+		/// Authorities justification is required.
+		const AUTHORITIES_JUSTIFICATION = 0b00000001;
+	}
 }
 
 /// Block status.
@@ -150,13 +161,19 @@ pub struct BlockImportNotification<Block: BlockT> {
 pub struct JustifiedHeader<Block: BlockT> {
 	header: <Block as BlockT>::Header,
 	justification: ::bft::Justification<Block::Hash>,
+	authorities_justification: Option<()>,
 	authorities: Vec<AuthorityId>,
 }
 
 impl<Block: BlockT> JustifiedHeader<Block> {
 	/// Deconstruct the justified header into parts.
-	pub fn into_inner(self) -> (<Block as BlockT>::Header, ::bft::Justification<Block::Hash>, Vec<AuthorityId>) {
-		(self.header, self.justification, self.authorities)
+	pub fn into_inner(self) -> (
+		<Block as BlockT>::Header,
+		::bft::Justification<Block::Hash>,
+		Option<()>,
+		Vec<AuthorityId>
+	) {
+		(self.header, self.justification, self.authorities_justification, self.authorities)
 	}
 }
 
@@ -321,6 +338,7 @@ impl<B, E, Block> Client<B, E, Block> where
 		&self,
 		header: <Block as BlockT>::Header,
 		justification: ::bft::UncheckedJustification<Block::Hash>,
+		authorities_justification: Option<()>,
 	) -> error::Result<JustifiedHeader<Block>> {
 		let parent_hash = header.parent_hash().clone();
 		let authorities = self.authorities_at(&BlockId::Hash(parent_hash))?;
@@ -330,9 +348,12 @@ impl<B, E, Block> Client<B, E, Block> where
 					format!("{}", header.hash())
 				)
 			)?;
+		let authorities_just = authorities_justification;
+
 		Ok(JustifiedHeader {
 			header,
 			justification: just,
+			authorities_justification: authorities_just,
 			authorities,
 		})
 	}
@@ -344,7 +365,7 @@ impl<B, E, Block> Client<B, E, Block> where
 		header: JustifiedHeader<Block>,
 		body: Option<Vec<<Block as BlockT>::Extrinsic>>,
 	) -> error::Result<ImportResult> {
-		let (header, justification, authorities) = header.into_inner();
+		let (header, justification, authorities_justification, authorities) = header.into_inner();
 		let parent_hash = header.parent_hash().clone();
 		match self.backend.blockchain().status(BlockId::Hash(parent_hash))? {
 			blockchain::BlockStatus::InChain => {},
@@ -354,7 +375,7 @@ impl<B, E, Block> Client<B, E, Block> where
 		let _import_lock = self.import_lock.lock();
 		let height: u64 = header.number().as_();
 		*self.importing_block.write() = Some(hash);
-		let result = self.execute_and_import_block(origin, hash, header, justification, body, authorities);
+		let result = self.execute_and_import_block(origin, hash, header, justification, authorities_justification, body, authorities);
 		*self.importing_block.write() = None;
 		telemetry!("block.import";
 			"height" => height,
@@ -370,6 +391,7 @@ impl<B, E, Block> Client<B, E, Block> where
 		hash: Block::Hash,
 		header: Block::Header,
 		justification: bft::Justification<Block::Hash>,
+		authorities_justification: Option<()>,
 		body: Option<Vec<Block::Extrinsic>>,
 		authorities: Vec<AuthorityId>,
 	) -> error::Result<ImportResult> {
@@ -377,6 +399,17 @@ impl<B, E, Block> Client<B, E, Block> where
 		match self.backend.blockchain().status(BlockId::Hash(hash))? {
 			blockchain::BlockStatus::InChain => return Ok(ImportResult::AlreadyInChain),
 			blockchain::BlockStatus::Unknown => {},
+		}
+
+		// if authorities set has been changed in this block we expect justification of this change
+		// by the old authorities set
+		if header.digest().logs().iter().any(|log| log.as_authorities_change().is_some()) {
+			if !authorities_justification.is_some() {
+				return Ok(ImportResult::AdditionalDataRequired(AdditionalBlockData::AUTHORITIES_JUSTIFICATION));
+			}
+
+			// TODO: do we need to ensure that if authorities set changes, then the digest has an
+			// authorities_set_change item?
 		}
 
 		let mut transaction = self.backend.begin_operation(BlockId::Hash(parent_hash))?;
@@ -513,7 +546,11 @@ impl<B, E, Block> Client<B, E, Block> where
 	pub fn block(&self, id: &BlockId<Block>) -> error::Result<Option<SignedBlock<Block::Header, Block::Extrinsic, Block::Hash>>> {
 		Ok(match (self.header(id)?, self.body(id)?, self.justification(id)?) {
 			(Some(header), Some(extrinsics), Some(justification)) =>
-				Some(SignedBlock { block: RuntimeBlock { header, extrinsics }, justification }),
+				Some(SignedBlock {
+					block: RuntimeBlock { header, extrinsics },
+					justification,
+					authorities_justification: None, // TODO
+				}),
 			_ => None,
 		})
 	}
@@ -535,12 +572,14 @@ impl<B, E, Block> bft::BlockImport<Block> for Client<B, E, Block>
 		&self,
 		block: Block,
 		justification: ::bft::Justification<Block::Hash>,
+		authorities_justification: Option<()>,
 		authorities: &[AuthorityId]
 	) -> bool {
 		let (header, extrinsics) = block.deconstruct();
 		let justified_header = JustifiedHeader {
 			header: header,
 			justification,
+			authorities_justification,
 			authorities: authorities.to_vec(),
 		};
 
