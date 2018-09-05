@@ -226,11 +226,6 @@ impl<T: Trait> Module<T> {
 		}
 	}
 
-	/// Deposit one of this module's logs.
-	fn deposit_log(log: Log<T>) {
-		<system::Module<T>>::deposit_log(<T as Trait>::Log::from(log).into());
-	}
-
 	/// Save original authorities set.
 	fn save_original_authorities(current_authorities: Option<Vec<T::SessionKey>>) {
 		if OriginalAuthorities::<T>::get().is_some() {
@@ -246,11 +241,7 @@ impl<T: Trait> Module<T> {
 /// Finalization hook for the consensus module.
 impl<T: Trait> OnFinalise<T::BlockNumber> for Module<T> {
 	fn on_finalise(_n: T::BlockNumber) {
-		if let Some(original_authorities) = <OriginalAuthorities<T>>::take() {
-			let current_authorities = AuthorityStorageVec::<T::SessionKey>::items();
-			if current_authorities != original_authorities {
-				Self::deposit_log(RawLog::AuthoritiesChange(AuthoritiesChange { new_authorities: current_authorities }));
-			}
+		if let Some(_) = <OriginalAuthorities<T>>::take() {
 		}
 	}
 }
