@@ -67,46 +67,46 @@ decl_module! {
 
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum Call where aux: T::PublicAux {
-		fn propose(aux, proposal: Box<T::Proposal>, value: T::Balance) -> Result = 0;
-		fn second(aux, proposal: PropIndex) -> Result = 1;
-		fn vote(aux, ref_index: ReferendumIndex, approve_proposal: bool) -> Result = 2;
+		fn propose(aux, proposal: Box<T::Proposal>, value: T::Balance) -> Result;
+		fn second(aux, proposal: PropIndex) -> Result;
+		fn vote(aux, ref_index: ReferendumIndex, approve_proposal: bool) -> Result;
 	}
 
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum PrivCall {
-		fn start_referendum(proposal: Box<T::Proposal>, vote_threshold: VoteThreshold) -> Result = 0;
-		fn cancel_referendum(ref_index: ReferendumIndex) -> Result = 1;
+		fn start_referendum(proposal: Box<T::Proposal>, vote_threshold: VoteThreshold) -> Result;
+		fn cancel_referendum(ref_index: ReferendumIndex) -> Result;
 	}
 }
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Democracy {
 
-		// The number of (public) proposals that have been made so far.
+		/// The number of (public) proposals that have been made so far.
 		pub PublicPropCount get(public_prop_count): default PropIndex;
-		// The public proposals. Unsorted.
+		/// The public proposals. Unsorted.
 		pub PublicProps get(public_props): default Vec<(PropIndex, T::Proposal, T::AccountId)>;
-		// Those who have locked a deposit.
+		/// Those who have locked a deposit.
 		pub DepositOf get(deposit_of): map [ PropIndex => (T::Balance, Vec<T::AccountId>) ];
-		// How often (in blocks) new public referenda are launched.
+		/// How often (in blocks) new public referenda are launched.
 		pub LaunchPeriod get(launch_period): required T::BlockNumber;
-		// The minimum amount to be used as a deposit for a public referendum proposal.
+		/// The minimum amount to be used as a deposit for a public referendum proposal.
 		pub MinimumDeposit get(minimum_deposit): required T::Balance;
 
-		// How often (in blocks) to check for new votes.
+		/// How often (in blocks) to check for new votes.
 		pub VotingPeriod get(voting_period): required T::BlockNumber;
 
-		// The next free referendum index, aka the number of referendums started so far.
+		/// The next free referendum index, aka the number of referendums started so far.
 		pub ReferendumCount get(referendum_count): required ReferendumIndex;
-		// The next referendum index that should be tallied.
+		/// The next referendum index that should be tallied.
 		pub NextTally get(next_tally): required ReferendumIndex;
-		// Information concerning any given referendum.
+		/// Information concerning any given referendum.
 		pub ReferendumInfoOf get(referendum_info): map [ ReferendumIndex => (T::BlockNumber, T::Proposal, VoteThreshold) ];
 
-		// Get the voters for the current proposal.
+		/// Get the voters for the current proposal.
 		pub VotersFor get(voters_for): default map [ ReferendumIndex => Vec<T::AccountId> ];
 
-		// Get the vote, if Some, of `who`.
+		/// Get the vote, if Some, of `who`.
 		pub VoteOf get(vote_of): map [ (ReferendumIndex, T::AccountId) => bool ];
 	}
 }
@@ -357,8 +357,8 @@ mod tests {
 	impl_outer_dispatch! {
 		#[derive(Debug, Clone, Eq, Serialize, Deserialize, PartialEq)]
 		pub enum Proposal {
-			Balances = 0,
-			Democracy = 1,
+			Balances,
+			Democracy,
 		}
 	}
 

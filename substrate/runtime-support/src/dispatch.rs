@@ -155,8 +155,7 @@ macro_rules! decl_dispatch {
 					$(
 						$param_name:ident : $param:ty
 					),*
-				) -> $result:ty
-				= $id:expr ;
+				) -> $result:ty;
 			)*
 		}
 		$($rest:tt)*
@@ -166,7 +165,7 @@ macro_rules! decl_dispatch {
 			$(#[$attr])*
 			pub enum $call_type;
 			$(
-				fn $fn_name( $( $param_name: $param ),* ) -> $result = $id;
+				fn $fn_name( $( $param_name: $param ),* ) -> $result;
 			)*
 		}
 		decl_dispatch! {
@@ -185,8 +184,7 @@ macro_rules! decl_dispatch {
 					$(
 						, $param_name:ident : $param:ty
 					)*
-				) -> $result:ty
-				= $id:expr ;
+				) -> $result:ty;
 			)*
 		}
 		$($rest:tt)*
@@ -196,7 +194,7 @@ macro_rules! decl_dispatch {
 			$(#[$attr])*
 			pub enum $call_type where aux: $aux_type;
 			$(
-				fn $fn_name(aux $(, $param_name: $param )*) -> $result = $id;
+				fn $fn_name(aux $(, $param_name: $param )*) -> $result;
 			)*
 		}
 		decl_dispatch! {
@@ -220,6 +218,7 @@ macro_rules! decl_dispatch {
 }
 
 #[macro_export]
+#[doc(hidden)]
 /// Implement a single dispatch modules to create a pairing of a dispatch trait and enum.
 macro_rules! __decl_dispatch_module_without_aux {
 	(
@@ -232,15 +231,14 @@ macro_rules! __decl_dispatch_module_without_aux {
 					$param_name:ident : $param:ty
 				),*
 			)
-			-> $result:ty
-			= $id:expr ;
+			-> $result:ty;
 		)*
 	) => {
 		__decl_dispatch_module_common! {
 			impl for $mod_type<$trait_instance: $trait_name>;
 			$(#[$attr])*
 			pub enum $call_type;
-			$( fn $fn_name( $( $param_name : $param ),* ) -> $result = $id ; )*
+			$( fn $fn_name( $( $param_name : $param ),* ) -> $result; )*
 		}
 		impl<$trait_instance: $trait_name> $crate::dispatch::Dispatchable
 			for $call_type<$trait_instance>
@@ -265,6 +263,7 @@ macro_rules! __decl_dispatch_module_without_aux {
 }
 
 #[macro_export]
+#[doc(hidden)]
 /// Implement a single dispatch modules to create a pairing of a dispatch trait and enum.
 macro_rules! __decl_dispatch_module_with_aux {
 	(
@@ -277,15 +276,14 @@ macro_rules! __decl_dispatch_module_with_aux {
 					, $param_name:ident : $param:ty
 				)*
 			)
-			-> $result:ty
-			= $id:expr ;
+			-> $result:ty;
 		)*
 	) => {
 		__decl_dispatch_module_common! {
 			impl for $mod_type<$trait_instance: $trait_name>;
 			$(#[$attr])*
 			pub enum $call_type;
-			$( fn $fn_name( $( $param_name : $param ),* ) -> $result = $id ; )*
+			$( fn $fn_name( $( $param_name : $param ),* ) -> $result; )*
 		}
 		impl<$trait_instance: $trait_name> $crate::dispatch::AuxDispatchable
 			for $call_type<$trait_instance>
@@ -312,6 +310,7 @@ macro_rules! __decl_dispatch_module_with_aux {
 
 /// Implement a single dispatch modules to create a pairing of a dispatch trait and enum.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __decl_dispatch_module_common {
 	(
 		impl for $mod_type:ident<$trait_instance:ident: $trait_name:ident>;
@@ -323,8 +322,7 @@ macro_rules! __decl_dispatch_module_common {
 					$param_name:ident : $param:ty
 				),*
 			)
-			-> $result:ty
-			= $id:expr ;
+			-> $result:ty;
 		)*
 	) => {
 		#[cfg(feature = "std")]
@@ -409,40 +407,88 @@ macro_rules! __decl_dispatch_module_common {
 
 		impl<$trait_instance: $trait_name> $crate::dispatch::Decode for $call_type<$trait_instance> {
 			fn decode<I: $crate::dispatch::Input>(input: &mut I) -> Option<Self> {
-				match input.read_byte()? {
-					$(
-						$id => {
-							$(
-								let $param_name = $crate::dispatch::Decode::decode(input)?;
-							)*
-							Some($call_type:: $fn_name( $( $param_name ),* ))
-						}
-					)*
-					_ => None,
-				}
+				let input_id = input.read_byte()?;
+				__impl_decode!(input; input_id; 0; $call_type; $( fn $fn_name( $( $param_name ),* ); )*)
 			}
 		}
 
 		impl<$trait_instance: $trait_name> $crate::dispatch::Encode for $call_type<$trait_instance> {
 			fn encode_to<W: $crate::dispatch::Output>(&self, dest: &mut W) {
-				match *self {
-					$(
-						$call_type::$fn_name(
-							$(
-								ref $param_name
-							),*
-						) => {
-							dest.push_byte($id as u8);
-							$(
-								$param_name.encode_to(dest);
-							)*
-						}
-					)*
-					$call_type::__PhantomItem(_) => unreachable!(),
-				}
+				__impl_encode!(dest; *self; 0; $call_type; $( fn $fn_name( $( $param_name ),* ); )*);
+				if let $call_type::__PhantomItem(_) = *self { unreachable!() }
 			}
 		}
 	}
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __impl_decode {
+	(
+		$input:expr;
+		$input_id:expr;
+		$fn_id:expr;
+		$call_type:ident;
+		fn $fn_name:ident(
+			$( $param_name:ident ),*
+		);
+		$($rest:tt)*
+	) => {
+		{
+			if $input_id == ($fn_id) {
+				$(
+					let $param_name = $crate::dispatch::Decode::decode($input)?;
+				)*
+				return Some($call_type:: $fn_name( $( $param_name ),* ));
+			}
+							
+			__impl_decode!($input; $input_id; $fn_id + 1; $call_type; $($rest)*)
+		}
+	};
+	(
+		$input:expr;
+		$input_id:expr;
+		$fn_id:expr;
+		$call_type:ident;
+	) => {
+		None
+	}
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __impl_encode {
+	(
+		$dest:expr;
+		$self:expr;
+		$fn_id:expr;
+		$call_type:ident;
+		fn $fn_name:ident(
+			$( $param_name:ident ),*
+		);
+		$($rest:tt)*
+	) => {
+		{
+			if let $call_type::$fn_name(
+				$(
+					ref $param_name
+				),*
+			) = $self {
+				$dest.push_byte(($fn_id) as u8);
+				$(
+					$param_name.encode_to($dest);
+				)*
+			}
+							
+			__impl_encode!($dest; $self; $fn_id + 1; $call_type; $($rest)*)
+		}
+	};
+	(
+		$dest:expr;
+		$self:expr;
+		$fn_id:expr;
+		$call_type:ident;
+	) => {{}}
 }
 
 pub trait IsSubType<T: Callable> {
@@ -460,7 +506,7 @@ macro_rules! impl_outer_dispatch {
 		$(#[$attr:meta])*
 		pub enum $call_type:ident where aux: $aux:ty {
 			$(
-				$camelcase:ident = $id:expr,
+				$camelcase:ident,
 			)*
 		}
 		$( $rest:tt )*
@@ -471,7 +517,7 @@ macro_rules! impl_outer_dispatch {
 				$camelcase ( $crate::dispatch::AuxCallableCallFor<$camelcase> )
 			,)*
 		}
-		impl_outer_dispatch_common! { $call_type, $($camelcase = $id,)* }
+		__impl_outer_dispatch_common! { $call_type, $($camelcase,)* }
 		impl $crate::dispatch::AuxDispatchable for $call_type {
 			type Aux = $aux;
 			type Trait = $call_type;
@@ -500,7 +546,7 @@ macro_rules! impl_outer_dispatch {
 		$(#[$attr:meta])*
 		pub enum $call_type:ident {
 			$(
-				$camelcase:ident = $id:expr,
+				$camelcase:ident,
 			)*
 		}
 		$( $rest:tt )*
@@ -511,7 +557,7 @@ macro_rules! impl_outer_dispatch {
 				$camelcase ( $crate::dispatch::CallableCallFor<$camelcase> )
 			,)*
 		}
-		impl_outer_dispatch_common! { $call_type, $($camelcase = $id,)* }
+		__impl_outer_dispatch_common! { $call_type, $($camelcase,)* }
 		impl $crate::dispatch::Dispatchable for $call_type {
 			type Trait = $call_type;
 			fn dispatch(self) -> $crate::dispatch::Result {
@@ -539,32 +585,21 @@ macro_rules! impl_outer_dispatch {
 
 /// Implement a meta-dispatch module to dispatch to other dispatchers.
 #[macro_export]
-macro_rules! impl_outer_dispatch_common {
+#[doc(hidden)]
+macro_rules! __impl_outer_dispatch_common {
 	(
-		$call_type:ident, $( $camelcase:ident = $id:expr, )*
+		$call_type:ident, $( $camelcase:ident, )*
 	) => {
 		impl $crate::dispatch::Decode for $call_type {
 			fn decode<I: $crate::dispatch::Input>(input: &mut I) -> Option<Self> {
-				match input.read_byte()? {
-					$(
-						$id =>
-							Some($call_type::$camelcase( $crate::dispatch::Decode::decode(input)? )),
-					)*
-					_ => None,
-				}
+				let input_id = input.read_byte()?;
+				__impl_decode!(input; input_id; 0; $call_type; $( fn $camelcase ( outer_dispatch_param ); )*)
 			}
 		}
 
 		impl $crate::dispatch::Encode for $call_type {
 			fn encode_to<W: $crate::dispatch::Output>(&self, dest: &mut W) {
-				match *self {
-					$(
-						$call_type::$camelcase( ref sub ) => {
-							dest.push_byte($id as u8);
-							sub.encode_to(dest);
-						}
-					)*
-				}
+				__impl_encode!(dest; *self; 0; $call_type; $( fn $camelcase( outer_dispatch_param ); )*)
 			}
 		}
 
@@ -573,6 +608,7 @@ macro_rules! impl_outer_dispatch_common {
 
 /// Implement the `json_metadata` function.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __impl_json_metadata {
 	(
 		impl for $mod_type:ident<$trait_instance:ident: $trait_name:ident>;
@@ -589,6 +625,7 @@ macro_rules! __impl_json_metadata {
 
 /// Convert the list of calls into their JSON representation, joined by ",".
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __calls_to_json {
 	// WITHOUT AUX
 	(
@@ -601,8 +638,7 @@ macro_rules! __calls_to_json {
 					$(
 						$param_name:ident : $param:ty
 					),*
-				) -> $result:ty
-				= $id:expr ;
+				) -> $result:ty;
 			)*
 		}
 		$($rest:tt)*
@@ -610,8 +646,8 @@ macro_rules! __calls_to_json {
 		concat!($prefix_str, " ",
 			r#"{ "name": ""#, stringify!($call_type),
 			r#"", "functions": {"#,
-			__functions_to_json!(""; $(
-				fn $fn_name( $( $param_name: $param ),* ) -> $result = $id;
+			__functions_to_json!(""; 0; $(
+				fn $fn_name( $( $param_name: $param ),* ) -> $result;
 				__function_doc_to_json!(""; $($doc_attr)*);
 			)*), " } }", __calls_to_json!(","; $($rest)*)
 		)
@@ -627,8 +663,7 @@ macro_rules! __calls_to_json {
 					$(
 						, $param_name:ident : $param:ty
 					)*
-				) -> $result:ty
-				= $id:expr ;
+				) -> $result:ty;
 			)*
 		}
 		$($rest:tt)*
@@ -636,8 +671,8 @@ macro_rules! __calls_to_json {
 		concat!($prefix_str, " ",
 			r#"{ "name": ""#, stringify!($call_type),
 			r#"", "functions": {"#,
-			__functions_to_json!(""; $aux_type; $(
-				fn $fn_name(aux $(, $param_name: $param )* ) -> $result = $id;
+			__functions_to_json!(""; 0; $aux_type; $(
+				fn $fn_name(aux $(, $param_name: $param )* ) -> $result;
 				__function_doc_to_json!(""; $($doc_attr)*);
 			)*), " } }", __calls_to_json!(","; $($rest)*)
 		)
@@ -652,13 +687,15 @@ macro_rules! __calls_to_json {
 
 /// Convert a list of function into their JSON representation, joined by ",".
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __functions_to_json {
 	// WITHOUT AUX
 	(
 		$prefix_str:tt;
+		$fn_id:expr;
 		fn $fn_name:ident(
 			$($param_name:ident : $param:ty),*
-		) -> $result:ty = $id:expr ;
+		) -> $result:ty;
 		$fn_doc:expr;
 		$($rest:tt)*
 	) => {
@@ -666,20 +703,22 @@ macro_rules! __functions_to_json {
 				__function_to_json!(
 					fn $fn_name(
 						$($param_name : $param),*
-					) -> $result = $id ;
+					) -> $result;
 					$fn_doc;
-				), __functions_to_json!(","; $($rest)*)
+					$fn_id;
+				), __functions_to_json!(","; $fn_id + 1; $($rest)*)
 			)
 	};
 	// WITH AUX
 	(
 		$prefix_str:tt;
+		$fn_id:expr;
 		$aux_type:ty;
 		fn $fn_name:ident(aux
 			$(
 				, $param_name:ident : $param:ty
 			)*
-		) -> $result:ty = $id:expr ;
+		) -> $result:ty;
 		$fn_doc:expr;
 		$($rest:tt)*
 	) => {
@@ -688,14 +727,16 @@ macro_rules! __functions_to_json {
 					fn $fn_name(
 						aux: $aux_type
 						$(, $param_name : $param)*
-					) -> $result = $id ;
+					) -> $result;
 					$fn_doc;
-				), __functions_to_json!(","; $aux_type; $($rest)*)
+					$fn_id;
+				), __functions_to_json!(","; $fn_id + 1; $aux_type; $($rest)*)
 			)
 	};
 	// BASE CASE
 	(
 		$prefix_str:tt;
+		$fn_id:expr;
 		$($aux_type:ty;)*
 	) => {
 		""
@@ -704,15 +745,17 @@ macro_rules! __functions_to_json {
 
 /// Convert a function into its JSON representation.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __function_to_json {
 	(
 		fn $fn_name:ident(
 			$first_param_name:ident : $first_param:ty $(, $param_name:ident : $param:ty)*
-		) -> $result:ty = $id:expr ;
+		) -> $result:ty;
 		$fn_doc:tt;
+		$fn_id:expr;
 	) => {
 			concat!(
-				r#"""#, stringify!($id), r#"""#,
+				r#"""#, stringify!($fn_id), r#"""#,
 				r#": { "name": ""#, stringify!($fn_name),
 				r#"", "params": [ "#,
 				concat!(r#"{ "name": ""#, stringify!($first_param_name), r#"", "type": ""#, stringify!($first_param), r#"" }"# ),
@@ -726,6 +769,7 @@ macro_rules! __function_to_json {
 
 /// Convert a function documentation attribute into its JSON representation.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __function_doc_to_json {
 	(
 		$prefix_str:tt;
@@ -764,17 +808,17 @@ mod tests {
 		#[derive(Serialize, Deserialize)]
 		pub enum Call where aux: T::PublicAux {
 			/// Hi, this is a comment.
-			fn aux_0(aux) -> Result = 0;
-			fn aux_1(aux, data: i32) -> Result = 1;
-			fn aux_2(aux, data: i32, data2: String) -> Result = 2;
+			fn aux_0(aux) -> Result;
+			fn aux_1(aux, data: i32) -> Result;
+			fn aux_2(aux, data: i32, data2: String) -> Result;
 		}
 
 		#[derive(Serialize, Deserialize)]
 		pub enum PrivCall {
 			/// Hi, this is a comment.
 			/// Hi, this is a second comment.
-			 fn priv_0(data: String) -> Result = 0;
-			 fn priv_1(data: String, data2: u32) -> Result = 1;
+			fn priv_0(data: String) -> Result;
+			fn priv_1(data: String, data2: u32) -> Result;
 		}
 	}
 
@@ -784,11 +828,11 @@ mod tests {
 				r#""0": { "name": "aux_0", "params": [ "#,
 					r#"{ "name": "aux", "type": "T::PublicAux" }"#,
 				r#" ], "description": [ " Hi, this is a comment." ] }, "#,
-				r#""1": { "name": "aux_1", "params": [ "#,
+				r#""0 + 1": { "name": "aux_1", "params": [ "#,
 					r#"{ "name": "aux", "type": "T::PublicAux" }, "#,
 					r#"{ "name": "data", "type": "i32" }"#,
 				r#" ], "description": [ ] }, "#,
-				r#""2": { "name": "aux_2", "params": [ "#,
+				r#""0 + 1 + 1": { "name": "aux_2", "params": [ "#,
 					r#"{ "name": "aux", "type": "T::PublicAux" }, "#,
 					r#"{ "name": "data", "type": "i32" }, "#,
 					r#"{ "name": "data2", "type": "String" }"#,
@@ -798,7 +842,7 @@ mod tests {
 				r#""0": { "name": "priv_0", "params": [ "#,
 					r#"{ "name": "data", "type": "String" }"#,
 				r#" ], "description": [ " Hi, this is a comment.", " Hi, this is a second comment." ] }, "#,
-				r#""1": { "name": "priv_1", "params": [ "#,
+				r#""0 + 1": { "name": "priv_1", "params": [ "#,
 					r#"{ "name": "data", "type": "String" }, "#,
 					r#"{ "name": "data2", "type": "u32" }"#,
 				r#" ], "description": [ ] }"#,

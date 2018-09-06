@@ -56,17 +56,17 @@ decl_module! {
 
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum Call where aux: T::PublicAux {
-		fn set(aux, now: T::Moment) -> Result = 0;
+		fn set(aux, now: T::Moment) -> Result;
 	}
 }
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Timestamp {
 		pub Now get(now): required T::Moment;
-		// The minimum (and advised) period between blocks.
+		/// The minimum (and advised) period between blocks.
 		pub BlockPeriod get(block_period): required T::Moment;
 
-		// Did the timestamp get updated in this block?
+		/// Did the timestamp get updated in this block?
 		DidUpdate: default bool;
 	}
 }

@@ -110,19 +110,19 @@ decl_module! {
 
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum Call where aux: T::PublicAux {
-		fn set_approvals(aux, votes: Vec<bool>, index: VoteIndex) -> Result = 0;
-		fn reap_inactive_voter(aux, signed_index: u32, who: Address<T::AccountId, T::AccountIndex>, who_index: u32, assumed_vote_index: VoteIndex) -> Result = 1;
-		fn retract_voter(aux, index: u32) -> Result = 2;
-		fn submit_candidacy(aux, slot: u32) -> Result = 3;
-		fn present_winner(aux, candidate: Address<T::AccountId, T::AccountIndex>, total: T::Balance, index: VoteIndex) -> Result = 4;
+		fn set_approvals(aux, votes: Vec<bool>, index: VoteIndex) -> Result;
+		fn reap_inactive_voter(aux, signed_index: u32, who: Address<T::AccountId, T::AccountIndex>, who_index: u32, assumed_vote_index: VoteIndex) -> Result;
+		fn retract_voter(aux, index: u32) -> Result;
+		fn submit_candidacy(aux, slot: u32) -> Result;
+		fn present_winner(aux, candidate: Address<T::AccountId, T::AccountIndex>, total: T::Balance, index: VoteIndex) -> Result;
 	}
 
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum PrivCall {
-		fn set_desired_seats(count: u32) -> Result = 0;
-		fn remove_member(who: Address<T::AccountId, T::AccountIndex>) -> Result = 1;
-		fn set_presentation_duration(count: T::BlockNumber) -> Result = 2;
-		fn set_term_duration(count: T::BlockNumber) -> Result = 3;
+		fn set_desired_seats(count: u32) -> Result;
+		fn remove_member(who: Address<T::AccountId, T::AccountIndex>) -> Result;
+		fn set_presentation_duration(count: T::BlockNumber) -> Result;
+		fn set_term_duration(count: T::BlockNumber) -> Result;
 	}
 }
 
@@ -130,53 +130,53 @@ decl_storage! {
 	trait Store for Module<T: Trait> as Council {
 
 		// parameters
-		// How much should be locked up in order to submit one's candidacy.
+		/// How much should be locked up in order to submit one's candidacy.
 		pub CandidacyBond get(candidacy_bond): required T::Balance;
-		// How much should be locked up in order to be able to submit votes.
+		/// How much should be locked up in order to be able to submit votes.
 		pub VotingBond get(voting_bond): required T::Balance;
-		// The punishment, per voter, if you provide an invalid presentation.
+		/// The punishment, per voter, if you provide an invalid presentation.
 		pub PresentSlashPerVoter get(present_slash_per_voter): required T::Balance;
-		// How many runners-up should have their approvals persist until the next vote.
+		/// How many runners-up should have their approvals persist until the next vote.
 		pub CarryCount get(carry_count): required u32;
-		// How long to give each top candidate to present themselves after the vote ends.
+		/// How long to give each top candidate to present themselves after the vote ends.
 		pub PresentationDuration get(presentation_duration): required T::BlockNumber;
-		// How many votes need to go by after a voter's last vote before they can be reaped if their
-		// approvals are moot.
+		/// How many votes need to go by after a voter's last vote before they can be reaped if their
+		/// approvals are moot.
 		pub InactiveGracePeriod get(inactivity_grace_period): required VoteIndex;
-		// How often (in blocks) to check for new votes.
+		/// How often (in blocks) to check for new votes.
 		pub VotingPeriod get(voting_period): required T::BlockNumber;
-		// How long each position is active for.
+		/// How long each position is active for.
 		pub TermDuration get(term_duration): required T::BlockNumber;
-		// Number of accounts that should be sitting on the council.
+		/// Number of accounts that should be sitting on the council.
 		pub DesiredSeats get(desired_seats): required u32;
 
 		// permanent state (always relevant, changes only at the finalisation of voting)
-		// The current council. When there's a vote going on, this should still be used for executive
-		// matters.
+		/// The current council. When there's a vote going on, this should still be used for executive
+		/// matters.
 		pub ActiveCouncil get(active_council): default Vec<(T::AccountId, T::BlockNumber)>;
-		// The total number of votes that have happened or are in progress.
+		/// The total number of votes that have happened or are in progress.
 		pub VoteCount get(vote_index): default VoteIndex;
 
 		// persistent state (always relevant, changes constantly)
-		// The last cleared vote index that this voter was last active at.
+		/// The last cleared vote index that this voter was last active at.
 		pub ApprovalsOf get(approvals_of): default map [ T::AccountId => Vec<bool> ];
-		// The vote index and list slot that the candidate `who` was registered or `None` if they are not
-		// currently registered.
+		/// The vote index and list slot that the candidate `who` was registered or `None` if they are not
+		/// currently registered.
 		pub RegisterInfoOf get(candidate_reg_info): map [ T::AccountId => (VoteIndex, u32) ];
-		// The last cleared vote index that this voter was last active at.
+		/// The last cleared vote index that this voter was last active at.
 		pub LastActiveOf get(voter_last_active): map [ T::AccountId => VoteIndex ];
-		// The present voter list.
+		/// The present voter list.
 		pub Voters get(voters): default Vec<T::AccountId>;
-		// The present candidate list.
+		/// The present candidate list.
 		pub Candidates get(candidates): default Vec<T::AccountId>; // has holes
 		pub CandidateCount get(candidate_count): default u32;
 
 		// temporary state (only relevant during finalisation/presentation)
-		// The accounts holding the seats that will become free on the next tally.
+		/// The accounts holding the seats that will become free on the next tally.
 		pub NextFinalise get(next_finalise): (T::BlockNumber, u32, Vec<T::AccountId>);
-		// The stakes as they were at the point that the vote ended.
+		/// The stakes as they were at the point that the vote ended.
 		pub SnapshotedStakes get(snapshoted_stakes): required Vec<T::Balance>;
-		// Get the leaderboard if we;re in the presentation phase.
+		/// Get the leaderboard if we;re in the presentation phase.
 		pub Leaderboard get(leaderboard): Vec<(T::Balance, T::AccountId)>; // ORDERED low -> high
 	}
 }
@@ -625,8 +625,8 @@ mod tests {
 	impl_outer_dispatch! {
 		#[derive(Debug, Clone, Eq, Serialize, Deserialize, PartialEq)]
 		pub enum Proposal {
-			Balances = 0,
-			Democracy = 1,
+			Balances,
+			Democracy,
 		}
 	}
 
