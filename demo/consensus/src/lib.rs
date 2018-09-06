@@ -428,12 +428,10 @@ impl<C> bft::Proposer<Block> for Proposer<C>
 		}
 	}
 
-	fn on_round_end(&self, round_number: usize, was_proposed: bool) {
-		let primary_validator = self.validators[
-			self.primary_index(round_number, self.validators.len())
-		];
-
-
+	fn on_round_end(&self,
+			round_number: usize,
+			was_proposed: bool,
+			primary_validator: AuthorityId) {
 		// alter the message based on whether we think the empty proposer was forced to skip the round.
 		// this is determined by checking if our local validator would have been forced to skip the round.
 		if !was_proposed {
@@ -445,7 +443,7 @@ impl<C> bft::Proposer<Block> for Proposer<C>
 			);
 		}
 
-		self.offline.write().note_round_end(primary_validator, was_proposed);
+		self.offline.write().note_round_end(primary_validator.into(), was_proposed);
 	}
 }
 

@@ -191,8 +191,8 @@ pub trait Proposer<B: Block> {
 	/// with consistent results across all authorities.
 	fn round_proposer(&self, round_number: usize, authorities: &[AuthorityId]) -> AuthorityId;
 
-	/// Hook called when a BFT round advances without a proposal.
-	fn on_round_end(&self, _round_number: usize, _proposed: bool) { }
+	/// Hook called when a BFT round advances
+	fn on_round_end(&self, _round_number: usize, _proposed: bool, _proposer: AuthorityId) { }
 }
 
 /// Block import trait.
@@ -309,7 +309,7 @@ impl<B: Block, P: Proposer<B>> rhododendron::Context for BftInstance<B, P>
 		accumulator: &::rhododendron::Accumulator<B, B::Hash, Self::AuthorityId, Self::Signature>,
 		round: usize,
 		next_round: usize,
-		reason: AdvanceRoundReason,
+		_reason: AdvanceRoundReason,
 	) {
 		use std::collections::HashSet;
 
@@ -327,9 +327,9 @@ impl<B: Block, P: Proposer<B>> rhododendron::Context for BftInstance<B, P>
 
 		self.update_round_cache(next_round);
 
-		if let AdvanceRoundReason::Timeout = reason {
-			self.proposer.on_round_end(round, accumulator.proposal().is_some());
-		}
+		self.proposer.on_round_end(round,
+				accumulator.proposal().is_some(),
+				accumulator.round_proposer());
 	}
 }
 
@@ -374,9 +374,6 @@ impl<B, P, I, InStream, OutSink> Future for BftFuture<B, P, I, InStream, OutSink
 				return Ok(if cancel { Async::Ready(()) } else { Async::NotReady }),
 			Err(()) => return Err(()),
 		};
-
-		// if something was committed, the round leader must have proposed.
-		self.inner.context().proposer.on_round_end(committed.round_number, true);
 
 		// If we didn't see the proposal (very unlikely),
 		// we will get the block from the network later.
