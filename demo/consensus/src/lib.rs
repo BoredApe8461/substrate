@@ -74,6 +74,9 @@ pub type SharedOfflineTracker = Arc<RwLock<OfflineTracker>>;
 // block size limit.
 const MAX_TRANSACTIONS_SIZE: usize = 4 * 1024 * 1024;
 
+// the next precision to use for when calculating the next proposer, in seconds
+const PROPOSER_PRECISION: Timestamp = 5;
+
 /// A long-lived network which can create BFT message routing processes on demand.
 pub trait Network {
 	/// The input stream of BFT messages. Should never logically conclude.
@@ -183,13 +186,14 @@ pub struct Proposer<C: Api + Send + Sync> {
 }
 
 impl<C: Api + Send + Sync> Proposer<C> {
-	fn primary_index(&self, round_number: usize, len: usize) -> usize {
+	fn primary_index(&self, _round_number: usize, len: usize) -> usize {
 		use primitives::uint::U256;
 
+		let ts = current_timestamp();
 		let big_len = U256::from(len);
 		let offset = U256::from_big_endian(&self.random_seed.0) % big_len;
-		let offset = offset.low_u64() as usize + round_number;
-		offset % len
+		let offset = offset.low_u64() + (ts - (ts % PROPOSER_PRECISION)) ;
+		(offset as usize) % len
 	}
 }
 
