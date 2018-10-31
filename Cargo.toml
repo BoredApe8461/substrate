@@ -53,6 +53,7 @@ members = [
 	"srml/session",
 	"srml/staking",
 	"srml/system",
+	"srml/template-module",
 	"srml/timestamp",
 	"srml/treasury",
 	"srml/upgrade-key",
