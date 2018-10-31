@@ -69,7 +69,7 @@ mod tests {
 	use sr_io::with_externalities;
 	use substrate_primitives::{H256, Blake2Hasher};
 	use sr_primitives::{
-		BuildStorage, traits::{BlakeTwo256, OnFinalise}, testing::{Digest, DigestItem, Header}
+		BuildStorage, traits::BlakeTwo256, testing::{Digest, DigestItem, Header}
 	};
 
 	impl_outer_origin! {
@@ -103,7 +103,7 @@ mod tests {
 	fn new_test_ext() -> sr_io::TestExternalities<Blake2Hasher> {
 		let mut t = system::GenesisConfig::<Test>::default().build_storage().unwrap();
 		t.extend(GenesisConfig::<Test>{
-			something: None,
+			something: 42,
 		}.build_storage().unwrap());
 		t.into()
 	}
@@ -111,7 +111,7 @@ mod tests {
 	#[test]
 	fn it_works_for_default_value() {
 		with_externalities(&mut new_test_ext(), || {
-			assert_eq!(TemplateModule::something(), None);
+			assert_eq!(TemplateModule::something(), Some(42));
 		});
 	}
 }
