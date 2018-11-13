@@ -1,6 +1,7 @@
 [package]
 name = "deploy-smart-contract-adder"
 version = "0.1.0"
-authors = ["Luke Schoen <ltfschoen@gmail.com>"]
+authors = ["Parity Technologies <admin@parity.io>"]
+description = "Substrate Deploy Smart Contract."
 
 [dependencies]
