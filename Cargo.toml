@@ -46,6 +46,7 @@ members = [
 	"srml/council",
 	"srml/democracy",
 	"srml/example",
+	"srml/examples/deploy-smart-contract-adder",
 	"srml/executive",
 	"srml/metadata",
 	"core/sr-primitives",
