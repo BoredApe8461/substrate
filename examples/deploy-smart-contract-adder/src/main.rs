@@ -12,5 +12,5 @@ fn main() {
   println!("GENESIS_HASH: 0x{}\n", HexDisplay::from(GENESIS_HASH));
 
   const ADDER_INIT_CODE: &'static [u8] = include_bytes!("/Users/scon/code/src/pepyakin/substrate-contracts-adder/target/wasm32-unknown-unknown/release/substrate_contracts_adder.wasm");
-  println!("ADDER_INIT_CODE: 0x{}\n", HexDisplay::from(ADDER_INIT_CODE));
+  println!("ADDER_INIT_CODE: 0x{}\n", HexDisplay::from(&ADDER_INIT_CODE));
 }
