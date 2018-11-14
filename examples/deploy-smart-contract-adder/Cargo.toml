@@ -8,3 +8,10 @@ description = "Substrate Deploy Smart Contract."
 hex-literal = "0.1.0"
 hex = "0.3"
 substrate-primitives = { path = "../../core/primitives" }
+substrate-keyring = { path = "../../core/keyring" }
+node-primitives = { path = "../../node/primitives" }
+node-runtime = { path = "../../node/runtime" }
+sr-primitives = { path = "../../core/sr-primitives" }
+srml-balances = { path = "../../srml/balances" }
+srml-contract = { path = "../../srml/contract" }
+parity-codec = "2.1"
