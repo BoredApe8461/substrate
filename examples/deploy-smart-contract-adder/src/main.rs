@@ -110,12 +110,9 @@ fn main() {
     &alice,
   );
 
-  /// Print the Extrinsic with Nonce 1 of a Call to a method to Increment storage by 1 in the Smart Contract 'Adder' at the Pre-Determined Contract Address using the encoded form of the Extrinsic
-  print_extrinsic(&pair, GENESIS_BLOCK_HASH, 1, Call::Contract(contract::Call::call::<Runtime>(addr, 1001.into(), 9_000_000.into(), vec![0x00, 0x01, 0x00, 0x00, 0x00])));
+  /// Print the Extrinsic with Nonce 1 of a Call to a method to Increment storage by 7 in the Smart Contract 'Adder' at the Pre-Determined Contract Address using the encoded form of the Extrinsic
+  print_extrinsic(&pair, GENESIS_BLOCK_HASH, 1, Call::Contract(contract::Call::call::<Runtime>(addr, 1001.into(), 9_000_000.into(), vec![0x00, 0x07, 0x00, 0x00, 0x00])));
 
   println!("DB Storage Key of Smart Contract code:");
   println!("0x{}", HexDisplay::from(&db_key_for_contract_storage(addr.clone(), [1u8; 32].to_vec())));
-
-  /// Print the Extrinsic with Nonce 2 of a Call to a method to further Increment storage by 7 in the Smart Contract 'Adder' at the Pre-Determined Contract Address using the encoded form of the Extrinsic
-  print_extrinsic(&pair, GENESIS_BLOCK_HASH, 2, Call::Contract(contract::Call::call::<Runtime>(addr, 1001.into(), 9_000_000.into(), vec![0x00, 0x07, 0x00, 0x00, 0x00])));
 }
