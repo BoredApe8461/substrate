@@ -6,6 +6,7 @@ extern crate sr_primitives as runtime_primitives;
 extern crate srml_balances as balances;
 extern crate srml_contract as contract;
 extern crate parity_codec as codec;
+extern crate substrate_keyring as keyring;
 
 #[macro_use]
 extern crate hex_literal;
@@ -13,12 +14,13 @@ extern crate hex_literal;
 use std::fmt::Write;
 use primitives::hexdisplay::HexDisplay;
 
-use keyring::{self, Keyring};
+use keyring::Keyring;
 use primitives::{twox_128, blake2_256, ed25519::{Public, Pair}};
 use node_primitives::{AccountId};
 use node_runtime::{UncheckedExtrinsic, Call, Runtime};
 use runtime_primitives::generic::{Era};
 use codec::{Encode};
+use contract::ContractAddressFor;
 
 /// Get Alice's account public key
 fn get_alice_public_key() -> AccountId {
@@ -46,7 +48,7 @@ fn show_hex_of_extrinsic(raw_bytes: &[u8]) {
 }
 
 fn print_extrinsic(pair: &Pair, genesis_hash: &[u8; 32], index: u64, func: Call) {
-  let pepa = AccountId::from(&pair.public().0[..]);
+  let pepa = AccountId::from(pair.public().as_ref());
   let era = Era::immortal();
   let payload = (index, func.clone(), era, genesis_hash);
   let signature = pair.sign(&payload.encode()).into();
@@ -55,7 +57,7 @@ fn print_extrinsic(pair: &Pair, genesis_hash: &[u8; 32], index: u64, func: Call)
     function: func,
   };
 
-  show_hex_of_extrinsic(&raw_uxt);
+  show_hex_of_extrinsic(&uxt.encode());
 }
 
 /// Returns only a first part of the storage key.
@@ -87,19 +89,19 @@ fn main() {
   println!("Genesis Block Hash is: 0x{}\n", HexDisplay::from(GENESIS_BLOCK_HASH));
 
   /// Load Smart Contract 'Adder' WASM code into a bytes slice
-  const ADDER_INIT_CODE: &'static [u8] = include_bytes!("/Users/scon/code/src/pepyakin/substrate-contracts-adder/target/wasm32-unknown-unknown/release/substrate_contracts_adder.wasm");
+  const ADDER_INIT_CODE: &'static [u8] = include_bytes!("/Users/pepyakin/dev/parity/substrate-contracts-adder/target/wasm32-unknown-unknown/release/substrate_contracts_adder.wasm");
   show_hex_of_smart_contract(&ADDER_INIT_CODE);
 
   /// Get Alice's account key
   let pair = Pair::from(Keyring::from_public(Public::from_raw(get_alice_public_key().clone().into())).unwrap());
-  let alice = AccountId::from(&pair.public().0[..]);
-  println!("Alice's Account Key is: {:?} ({})\n", alice, keyring::ed25519::Public(alice.0).to_ss58check());
+  let alice = AccountId::from(pair.public().as_ref());
+  println!("Alice's Account Key is: {:?} ({})\n", alice, pair.public().to_ss58check());
 
   /// Print the Extrinsic with Nonce 0 in encoded form where Alice would deploy Smart Contract "Adder" to the Substrate Node
   print_extrinsic(
-    &pair, 
-    GENESIS_BLOCK_HASH, 
-    0, 
+    &pair,
+    GENESIS_BLOCK_HASH,
+    0,
     Call::Contract(contract::Call::create::<Runtime>(1001.into(), 9_000_000.into(), ADDER_INIT_CODE.to_vec(), Vec::new()))
   );
 
