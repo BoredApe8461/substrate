@@ -572,41 +572,18 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 			self.apply_finality(parent_hash, None, last_best, make_notifications)?;
 		}
 
+		let temp_flag = 1;
 		let mut transaction = self.backend.begin_operation(BlockId::Hash(parent_hash))?;
-		let (storage_update, changes_update, storage_changes) = match transaction.state()? {
-			Some(transaction_state) => {
-				let mut overlay = Default::default();
-				let mut r = self.executor.call_at_state(
-					transaction_state,
-					&mut overlay,
-					"Core_execute_block",
-					&<Block as BlockT>::new(import_headers.pre().clone(), body.clone().unwrap_or_default()).encode(),
-					match (origin, self.block_execution_strategy) {
-						(BlockOrigin::NetworkInitialSync, _) | (_, ExecutionStrategy::NativeWhenPossible) =>
-							ExecutionManager::NativeWhenPossible,
-						(_, ExecutionStrategy::AlwaysWasm) => ExecutionManager::AlwaysWasm,
-						_ => ExecutionManager::Both(|wasm_result, native_result| {
-							let header = import_headers.post();
-							warn!("Consensus error between wasm and native block execution at block {}", hash);
-							warn!("   Header {:?}", header);
-							warn!("   Native result {:?}", native_result);
-							warn!("   Wasm result {:?}", wasm_result);
-							telemetry!("block.execute.consensus_failure";
-								"hash" => ?hash,
-								"origin" => ?origin,
-								"header" => ?header
-							);
-							wasm_result
-						}),
-					},
-				);
-				let (_, storage_update, changes_update) = r?;
-				overlay.commit_prospective();
-				(Some(storage_update), Some(changes_update), Some(overlay.into_committed()))
-			},
-			None => (None, None, None)
-		};
 
+		if temp_flag == 1 {
+			trace!("Execute Block");
+			let (storage_update, changes_update, storage_changes) = self.block_execution(import_headers,origin,hash,body);
+		} else {
+			trace!("Locally-authored block: skipping re-execution");
+			let (storage_update, changes_update, storage_changes) = (None, None, None);
+		}
+		
+		
 		// TODO: non longest-chain rule.
 		let is_new_best = finalized || import_headers.post().number() > &last_best_number;
 		let leaf_state = if finalized {
@@ -668,6 +645,56 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 		}
 
 		Ok(ImportResult::Queued)
+	}
+
+	fn block_execution(
+		&self,
+		import_headers: PrePostHeader<Block::Header>, 
+		origin: BlockOrigin,
+		hash: Block::Hash, 
+		body: Option<Vec<Block::Extrinsic>>, 
+	) -> (Option<T>, Option<T>, Option<T>) {
+
+		// Is it better to clone this again or pass it into the function?
+		let parent_hash = import_headers.post().parent_hash().clone();
+
+		let mut transaction = self.backend.begin_operation(BlockId::Hash(parent_hash))?;
+		let (storage_update, changes_update, storage_changes) = match transaction.state()? {
+			Some(transaction_state) => {
+				let mut overlay = Default::default();
+				let mut r = self.executor.call_at_state(
+					transaction_state,
+					&mut overlay,
+					"Core_execute_block",
+					&<Block as BlockT>::new(import_headers.pre().clone(), body.clone().unwrap_or_default()).encode(),
+					match (origin, self.block_execution_strategy) {
+						(BlockOrigin::NetworkInitialSync, _) | (_, ExecutionStrategy::NativeWhenPossible) =>
+							ExecutionManager::NativeWhenPossible,
+						(_, ExecutionStrategy::AlwaysWasm) => ExecutionManager::AlwaysWasm,
+						_ => ExecutionManager::Both(|wasm_result, native_result| {
+							let header = import_headers.post();
+							warn!("Consensus error between wasm and native block execution at block {}", hash);
+							warn!("   Header {:?}", header);
+							warn!("   Native result {:?}", native_result);
+							warn!("   Wasm result {:?}", wasm_result);
+							telemetry!("block.execute.consensus_failure";
+								"hash" => ?hash,
+								"origin" => ?origin,
+								"header" => ?header
+							);
+							wasm_result
+						}),
+					},
+				);
+				let (_, storage_update, changes_update) = r?;
+				overlay.commit_prospective();
+				(Some(storage_update), Some(changes_update), Some(overlay.into_committed())) // returns here
+			},
+			None => (None, None, None) // returns here
+		};
+
+		//Ok(())
+
 	}
 
 	/// Finalizes all blocks up to given. If a justification is provided it is
