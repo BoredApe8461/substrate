@@ -82,7 +82,6 @@ pub use state_db::PruningMode;
 
 const CANONICALIZATION_DELAY: u64 = 256;
 const MIN_BLOCKS_TO_KEEP_CHANGES_TRIES_FOR: u64 = 32768;
-const STATE_CACHE_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 /// DB-backed patricia trie state, transaction type is an overlay of changes to commit.
 pub type DbState = state_machine::TrieBackend<Arc<state_machine::Storage<Blake2Hasher>>, Blake2Hasher>;
@@ -91,6 +90,8 @@ pub type DbState = state_machine::TrieBackend<Arc<state_machine::Storage<Blake2H
 pub struct DatabaseSettings {
 	/// Cache size in bytes. If `None` default is used.
 	pub cache_size: Option<usize>,
+	/// State cache size.
+	pub state_cache_size: Option<usize>,
 	/// Path to the database.
 	pub path: PathBuf,
 	/// Pruning mode.
@@ -522,8 +523,7 @@ impl<Block: BlockT> Backend<Block> {
 	/// The pruning window is how old a block must be before the state is pruned.
 	pub fn new(config: DatabaseSettings, canonicalization_delay: u64) -> Result<Self, client::error::Error> {
 		let db = open_database(&config, columns::META, "full")?;
-
-		Backend::from_kvdb(db as Arc<_>, config.pruning, canonicalization_delay)
+		Backend::from_kvdb(db as Arc<_>, config.pruning, canonicalization_delay, config.state_cache_size)
 	}
 
 	#[cfg(test)]
@@ -536,10 +536,11 @@ impl<Block: BlockT> Backend<Block> {
 			db as Arc<_>,
 			PruningMode::keep_blocks(keep_blocks),
 			canonicalization_delay,
+			None,
 		).expect("failed to create test-db")
 	}
 
-	fn from_kvdb(db: Arc<KeyValueDB>, pruning: PruningMode, canonicalization_delay: u64) -> Result<Self, client::error::Error> {
+	fn from_kvdb(db: Arc<KeyValueDB>, pruning: PruningMode, canonicalization_delay: u64, state_cache_size: Option<usize>) -> Result<Self, client::error::Error> {
 		let is_archive_pruning = pruning.is_archive();
 		let blockchain = BlockchainDb::new(db.clone())?;
 		let meta = blockchain.meta.clone();
@@ -556,12 +557,17 @@ impl<Block: BlockT> Backend<Block> {
 			_phantom: Default::default(),
 		};
 
+		let state_cache_size = match state_cache_size {
+			Some(s) => s,
+			None => 16 * 1024 * 1024,
+		};
+
 		Ok(Backend {
 			storage: Arc::new(storage_db),
 			changes_tries_storage,
 			blockchain,
 			canonicalization_delay,
-			shared_cache: new_shared_cache(STATE_CACHE_SIZE_BYTES),
+			shared_cache: new_shared_cache(state_cache_size),
 		})
 	}
 
@@ -1063,7 +1069,7 @@ mod tests {
 			db.storage.db.clone()
 		};
 
-		let backend = Backend::<Block>::from_kvdb(backing, PruningMode::keep_blocks(1), 0).unwrap();
+		let backend = Backend::<Block>::from_kvdb(backing, PruningMode::keep_blocks(1), 0, None).unwrap();
 		assert_eq!(backend.blockchain().info().unwrap().best_number, 9);
 		for i in 0..10 {
 			assert!(backend.blockchain().hash(i).unwrap().is_some())
