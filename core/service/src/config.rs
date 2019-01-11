@@ -48,7 +48,7 @@ pub struct Configuration<C, G: Serialize + DeserializeOwned + BuildStorage> {
 	/// Cache Size for internal database in MiB
 	pub database_cache_size: Option<u32>,
 	/// Size of internal state cache in Bytes
-	pub state_cache_size: Option<usize>,
+	pub state_cache_size: usize,
 	/// Pruning settings.
 	pub pruning: PruningMode,
 	/// Additional key seeds.
