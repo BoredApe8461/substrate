@@ -92,13 +92,11 @@ pub trait CallRuntimeAt<Block: BlockT> {
 }
 
 decl_runtime_apis! {
-	/// The `Core` api trait that is mandantory for each runtime.
+	/// The `Core` api trait that is mandatory for each runtime.
 	#[core_trait]
 	pub trait Core {
 		/// Returns the version of the runtime.
 		fn version() -> RuntimeVersion;
-		/// Returns the authorities.
-		fn authorities() -> Vec<AuthorityIdFor<Block>>;
 		/// Execute the given block.
 		fn execute_block(block: Block);
 		/// Initialise a block with the given header.

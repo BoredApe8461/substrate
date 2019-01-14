@@ -21,13 +21,11 @@ use parking_lot::RwLock;
 
 use kvdb::{KeyValueDB, DBTransaction};
 
-use client::blockchain::Cache as BlockchainCache;
 use client::error::Result as ClientResult;
 use parity_codec::{Encode, Decode};
 use parity_codec_derive::{Encode, Decode};
-use runtime_primitives::generic::BlockId;
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, NumberFor, As, AuthorityIdFor};
-use crate::utils::{self, COLUMN_META};
+use runtime_primitives::traits::{Block as BlockT, NumberFor, As, AuthorityIdFor};
+use crate::utils::COLUMN_META;
 
 use self::list_cache::ListCache;
 
@@ -177,32 +175,3 @@ impl<'a, Block: BlockT> DbCacheTransaction<'a, Block> {
 
 /// Synchronous implementation of database-backed blockchain data cache.
 pub struct DbCacheSync<Block: BlockT>(pub RwLock<DbCache<Block>>);
-
-impl<Block: BlockT> BlockchainCache<Block> for DbCacheSync<Block> {
-	fn authorities_at(&self, at: BlockId<Block>) -> Option<Vec<AuthorityIdFor<Block>>> {
-		let cache = self.0.read();
-		let storage = cache.authorities_at.storage();
-		let db = storage.db();
-		let columns = storage.columns();
-		let at = match at {
-			BlockId::Hash(hash) => {
-				let header = utils::read_header::<Block>(
-					&**db,
-					columns.key_lookup,
-					columns.header,
-					BlockId::Hash(hash.clone())).ok()??;
-				ComplexBlockId::new(hash, *header.number())
-			},
-			BlockId::Number(number) => {
-				let hash = utils::read_header::<Block>(
-					&**db,
-					columns.key_lookup,
-					columns.header,
-					BlockId::Number(number.clone())).ok()??.hash();
-				ComplexBlockId::new(hash, number)
-			},
-		};
-
-		cache.authorities_at.value_at_block(&at).ok()?
-	}
-}

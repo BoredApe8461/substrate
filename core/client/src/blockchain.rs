@@ -16,7 +16,7 @@
 
 //! Substrate blockchain trait
 
-use runtime_primitives::traits::{AuthorityIdFor, Block as BlockT, Header as HeaderT, NumberFor};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use runtime_primitives::generic::BlockId;
 use runtime_primitives::Justification;
 
@@ -77,19 +77,11 @@ pub trait Backend<Block: BlockT>: HeaderBackend<Block> {
 	fn justification(&self, id: BlockId<Block>) -> Result<Option<Justification>>;
 	/// Get last finalized block hash.
 	fn last_finalized(&self) -> Result<Block::Hash>;
-	/// Returns data cache reference, if it is enabled on this backend.
-	fn cache(&self) -> Option<&Cache<Block>>;
 
 	/// Returns hashes of all blocks that are leaves of the block tree.
 	/// in other words, that have no children, are chain heads.
 	/// Results must be ordered best (longest, heighest) chain first.
 	fn leaves(&self) -> Result<Vec<Block::Hash>>;
-}
-
-/// Blockchain optional data cache.
-pub trait Cache<Block: BlockT>: Send + Sync {
-	/// Returns the set of authorities, that was active at given block or None if there's no entry in the cache.
-	fn authorities_at(&self, block: BlockId<Block>) -> Option<Vec<AuthorityIdFor<Block>>>;
 }
 
 /// Blockchain info

@@ -25,7 +25,7 @@ use runtime_primitives::{Justification, generic::BlockId};
 use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, NumberFor, Zero, AuthorityIdFor};
 
 use crate::backend::{AuxStore, NewBlockState};
-use crate::blockchain::{Backend as BlockchainBackend, BlockStatus, Cache as BlockchainCache,
+use crate::blockchain::{Backend as BlockchainBackend, BlockStatus,
 	HeaderBackend as BlockchainHeaderBackend, Info as BlockchainInfo};
 use crate::cht;
 use crate::error::{ErrorKind as ClientErrorKind, Result as ClientResult};
@@ -56,9 +56,6 @@ pub trait Storage<Block: BlockT>: AuxStore + BlockchainHeaderBackend<Block> {
 
 	/// Get changes trie CHT root for given block. Fails if the block is not pruned (not a part of any CHT).
 	fn changes_trie_cht_root(&self, cht_size: u64, block: NumberFor<Block>) -> ClientResult<Block::Hash>;
-
-	/// Get storage cache.
-	fn cache(&self) -> Option<&BlockchainCache<Block>>;
 }
 
 /// Light client blockchain.
@@ -151,10 +148,6 @@ impl<S, F, Block> BlockchainBackend<Block> for Blockchain<S, F> where Block: Blo
 
 	fn last_finalized(&self) -> ClientResult<Block::Hash> {
 		self.storage.last_finalized()
-	}
-
-	fn cache(&self) -> Option<&BlockchainCache<Block>> {
-		self.storage.cache()
 	}
 
 	fn leaves(&self) -> ClientResult<Vec<Block::Hash>> {

@@ -313,16 +313,6 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 			.expect("None is returned if there's no value stored for the given key; ':code' key is always defined; qed").0)
 	}
 
-	/// Get the set of authorities at a given block.
-	pub fn authorities_at(&self, id: &BlockId<Block>) -> error::Result<Vec<AuthorityIdFor<Block>>> {
-		match self.backend.blockchain().cache().and_then(|cache| cache.authorities_at(*id)) {
-			Some(cached_value) => Ok(cached_value),
-			None => self.executor.call(id, "Core_authorities", &[])
-				.and_then(|r| Vec::<AuthorityIdFor<Block>>::decode(&mut &r[..])
-					.ok_or_else(|| error::ErrorKind::InvalidAuthoritiesSet.into()))
-		}
-	}
-
 	/// Get the RuntimeVersion at a given block.
 	pub fn runtime_version_at(&self, id: &BlockId<Block>) -> error::Result<RuntimeVersion> {
 		// TODO: Post Poc-2 return an error if version is missing
@@ -1289,17 +1279,6 @@ impl<B, E, Block, RA> consensus::BlockImport<Block> for Client<B, E, Block, RA> 
 	}
 }
 
-impl<B, E, Block, RA> consensus::Authorities<Block> for Client<B, E, Block, RA> where
-	B: backend::Backend<Block, Blake2Hasher>,
-	E: CallExecutor<Block, Blake2Hasher> + Clone,
-	Block: BlockT<Hash=H256>,
-{
-	type Error = Error;
-	fn authorities(&self, at: &BlockId<Block>) -> Result<Vec<AuthorityIdFor<Block>>, Self::Error> {
-		self.authorities_at(at).map_err(|e| e.into())
-	}
-}
-
 impl<B, E, Block, RA> CurrentHeight for Client<B, E, Block, RA> where
 	B: backend::Backend<Block, Blake2Hasher>,
 	E: CallExecutor<Block, Blake2Hasher> + Clone,
@@ -1517,18 +1496,6 @@ pub(crate) mod tests {
 				&BlockId::Number(client.info().unwrap().chain.best_number),
 			).unwrap()
 		);
-	}
-
-	#[test]
-	fn authorities_call_works() {
-		let client = test_client::new();
-
-		assert_eq!(client.info().unwrap().chain.best_number, 0);
-		assert_eq!(client.authorities_at(&BlockId::Number(0)).unwrap(), vec![
-			Keyring::Alice.to_raw_public().into(),
-			Keyring::Bob.to_raw_public().into(),
-			Keyring::Charlie.to_raw_public().into()
-		]);
 	}
 
 	#[test]

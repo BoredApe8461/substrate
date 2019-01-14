@@ -238,10 +238,6 @@ impl<Block: BlockT> client::blockchain::Backend<Block> for BlockchainDb<Block> {
 		Ok(self.meta.read().finalized_hash.clone())
 	}
 
-	fn cache(&self) -> Option<&client::blockchain::Cache<Block>> {
-		None
-	}
-
 	fn leaves(&self) -> Result<Vec<Block::Hash>, client::error::Error> {
 		Ok(self.leaves.read().hashes())
 	}

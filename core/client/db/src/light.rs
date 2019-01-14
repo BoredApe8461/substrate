@@ -22,8 +22,8 @@ use parking_lot::RwLock;
 use kvdb::{KeyValueDB, DBTransaction};
 
 use client::backend::{AuxStore, NewBlockState};
-use client::blockchain::{BlockStatus, Cache as BlockchainCache,
-	HeaderBackend as BlockchainHeaderBackend, Info as BlockchainInfo};
+use client::blockchain::{BlockStatus, HeaderBackend as BlockchainHeaderBackend,
+	Info as BlockchainInfo};
 use client::{cht, LeafSet};
 use client::error::{ErrorKind as ClientErrorKind, Result as ClientResult};
 use client::light::blockchain::Storage as LightBlockchainStorage;
@@ -464,10 +464,6 @@ impl<Block> LightBlockchainStorage<Block> for LightStorage<Block>
 
 	fn last_finalized(&self) -> ClientResult<Block::Hash> {
 		Ok(self.meta.read().finalized_hash.clone())
-	}
-
-	fn cache(&self) -> Option<&BlockchainCache<Block>> {
-		None
 	}
 }
 

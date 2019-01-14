@@ -334,10 +334,6 @@ impl<Block: BlockT> blockchain::Backend<Block> for Blockchain<Block> {
 		Ok(self.storage.read().finalized_hash.clone())
 	}
 
-	fn cache(&self) -> Option<&blockchain::Cache<Block>> {
-		Some(&self.cache)
-	}
-
 	fn leaves(&self) -> error::Result<Vec<Block::Hash>> {
 		Ok(self.storage.read().leaves.hashes())
 	}
@@ -404,10 +400,6 @@ impl<Block: BlockT> light::blockchain::Storage<Block> for Blockchain<Block>
 	fn changes_trie_cht_root(&self, _cht_size: u64, block: NumberFor<Block>) -> error::Result<Block::Hash> {
 		self.storage.read().changes_trie_cht_roots.get(&block).cloned()
 			.ok_or_else(|| error::ErrorKind::Backend(format!("Changes trie CHT for block {} not exists", block)).into())
-	}
-
-	fn cache(&self) -> Option<&blockchain::Cache<Block>> {
-		Some(&self.cache)
 	}
 }
 
@@ -668,17 +660,6 @@ impl<Block: BlockT> Cache<Block> {
 	}
 }
 
-impl<Block: BlockT> blockchain::Cache<Block> for Cache<Block> {
-	fn authorities_at(&self, block: BlockId<Block>) -> Option<Vec<AuthorityIdFor<Block>>> {
-		let hash = match block {
-			BlockId::Hash(hash) => hash,
-			BlockId::Number(number) => self.storage.read().hashes.get(&number).cloned()?,
-		};
-
-		self.authorities_at.read().get(&hash).cloned().unwrap_or(None)
-	}
-}
-
 /// Prunable in-memory changes trie storage.
 pub struct ChangesTrieStorage<H: Hasher>(InMemoryChangesTrieStorage<H>) where H::Out: HeapSizeOf;
 impl<H: Hasher> backend::PrunableStateChangesTrieStorage<H> for ChangesTrieStorage<H> where H::Out: HeapSizeOf {
@@ -694,7 +675,7 @@ impl<H: Hasher> state_machine::ChangesTrieRootsStorage<H> for ChangesTrieStorage
 }
 
 impl<H: Hasher> state_machine::ChangesTrieStorage<H> for ChangesTrieStorage<H> where H::Out: HeapSizeOf {
-	fn get(&self, key: &H::Out) -> Result<Option<state_machine::DBValue>, String> {
+	fn get( & self, key: & H::Out) -> Result < Option < state_machine::DBValue >, String > {
 		self.0.get(key)
 	}
 }

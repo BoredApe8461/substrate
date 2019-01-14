@@ -263,10 +263,6 @@ impl Core<Block> for RuntimeApi {
 		unimplemented!("Not required for testing!")
 	}
 
-	fn authorities(&self, _: &BlockId<Block>) -> Result<Vec<Ed25519AuthorityId>> {
-		unimplemented!("Not required for testing!")
-	}
-
 	fn execute_block(&self, _: &BlockId<Block>, _: Block) -> Result<()> {
 		unimplemented!("Not required for testing!")
 	}
