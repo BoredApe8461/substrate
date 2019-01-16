@@ -137,14 +137,15 @@ impl<Block: BlockT> ImportBlock<Block> {
 	}
 }
 
-
-
 /// Block import trait.
 pub trait BlockImport<B: BlockT> {
 	type Error: ::std::error::Error + Send + 'static;
-	/// Import a Block alongside the new authorities valid form this block forward
+	type Operation;
+
+	 /// Import a Block alongside the new authorities valid form this block forward
 	fn import_block(&self,
+		operation: &mut Self::Operation,
 		block: ImportBlock<B>,
 		new_authorities: Option<Vec<AuthorityIdFor<B>>>
-	) -> Result<ImportResult, Self::Error>;
+	) -> Result<(), Self::Error>;
 }

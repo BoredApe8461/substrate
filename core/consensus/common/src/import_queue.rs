@@ -36,7 +36,7 @@ use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, NumberFor, 
 use error::Error as ConsensusError;
 
 /// Shared block import struct used by the queue.
-pub type SharedBlockImport<B> = Arc<dyn BlockImport<B, Error=ConsensusError> + Send + Sync>;
+pub type SharedBlockImport<B, O> = Arc<dyn BlockImport<B, Error=ConsensusError, Operation=O> + Send + Sync>;
 
 /// Maps to the Origin used by the network.
 pub type Origin = usize;
@@ -68,6 +68,16 @@ pub trait Verifier<B: BlockT>: Send + Sync + Sized {
 		justification: Option<Justification>,
 		body: Option<Vec<B::Extrinsic>>
 	) -> Result<(ImportBlock<B>, Option<Vec<AuthorityIdFor<B>>>), String>;
+}
+
+/// An import oracle, capable of creating import operation and locking
+/// to make sure only one import happens at a time.
+pub trait ImportOracle<B: BlockT>: Send + Sync {
+	type Error: ::std::error::Error + Send + 'static;
+	type Operation;
+
+	/// Begin an import operation.
+	fn begin<F: FnOnce(&mut Self::Operation) -> Result<(), Self::Error>>(&self, f: F) -> Result<ImportResult, Self::Error>;
 }
 
 /// Blocks import queue API.
@@ -104,11 +114,12 @@ pub struct ImportQueueStatus<B: BlockT> {
 
 /// Basic block import queue that is importing blocks sequentially in a separate thread,
 /// with pluggable verification.
-pub struct BasicQueue<B: BlockT, V: 'static + Verifier<B>> {
+pub struct BasicQueue<B: BlockT, V: 'static + Verifier<B>, O: 'static + ImportOracle<B, Error=ConsensusError>> {
 	handle: Mutex<Option<::std::thread::JoinHandle<()>>>,
 	data: Arc<AsyncImportQueueData<B>>,
 	verifier: Arc<V>,
-	block_import: SharedBlockImport<B>,
+	block_import: SharedBlockImport<B, O::Operation>,
+	oracle: Arc<O>,
 }
 
 /// Locks order: queue, queue_blocks, best_importing_number
@@ -120,14 +131,15 @@ pub struct AsyncImportQueueData<B: BlockT> {
 	is_stopping: AtomicBool,
 }
 
-impl<B: BlockT, V: Verifier<B>> BasicQueue<B, V> {
+impl<B: BlockT, V: Verifier<B>, O: ImportOracle<B, Error=ConsensusError>> BasicQueue<B, V, O> {
 	/// Instantiate a new basic queue, with given verifier.
-	pub fn new(verifier: Arc<V>, block_import: SharedBlockImport<B>) -> Self {
+	pub fn new(verifier: Arc<V>, oracle: Arc<O>, block_import: SharedBlockImport<B, O::Operation>) -> Self {
 		Self {
 			handle: Mutex::new(None),
 			data: Arc::new(AsyncImportQueueData::new()),
 			verifier,
 			block_import,
+			oracle,
 		}
 	}
 }
@@ -150,7 +162,7 @@ impl<B: BlockT> AsyncImportQueueData<B> {
 	}
 }
 
-impl<B: BlockT, V: 'static + Verifier<B>> ImportQueue<B> for BasicQueue<B, V> {
+impl<B: BlockT, V: 'static + Verifier<B>, O: 'static + ImportOracle<B, Error=ConsensusError>> ImportQueue<B> for BasicQueue<B, V, O> {
 	fn start<L: 'static + Link<B>>(
 		&self,
 		link: L,
@@ -160,8 +172,9 @@ impl<B: BlockT, V: 'static + Verifier<B>> ImportQueue<B> for BasicQueue<B, V> {
 		let qdata = self.data.clone();
 		let verifier = self.verifier.clone();
 		let block_import = self.block_import.clone();
+		let oracle = self.oracle.clone();
 		*self.handle.lock() = Some(::std::thread::Builder::new().name("ImportQueue".into()).spawn(move || {
-			import_thread(block_import, link, qdata, verifier)
+			import_thread(oracle, block_import, link, qdata, verifier)
 		})?);
 		Ok(())
 	}
@@ -220,15 +233,16 @@ impl<B: BlockT, V: 'static + Verifier<B>> ImportQueue<B> for BasicQueue<B, V> {
 	}
 }
 
-impl<B: BlockT, V: 'static + Verifier<B>> Drop for BasicQueue<B, V> {
+impl<B: BlockT, V: 'static + Verifier<B>, O: 'static + ImportOracle<B, Error=ConsensusError>> Drop for BasicQueue<B, V, O> {
 	fn drop(&mut self) {
 		self.stop();
 	}
 }
 
 /// Blocks import thread.
-fn import_thread<B: BlockT, L: Link<B>, V: Verifier<B>>(
-	block_import: SharedBlockImport<B>,
+fn import_thread<B: BlockT, L: Link<B>, V: Verifier<B>, O: ImportOracle<B, Error=ConsensusError>>(
+	oracle: Arc<O>,
+	block_import: SharedBlockImport<B, O::Operation>,
 	link: L,
 	qdata: Arc<AsyncImportQueueData<B>>,
 	verifier: Arc<V>
@@ -256,6 +270,7 @@ fn import_thread<B: BlockT, L: Link<B>, V: Verifier<B>>(
 
 		let blocks_hashes: Vec<B::Hash> = new_blocks.1.iter().map(|b| b.hash.clone()).collect();
 		if !import_many_blocks(
+			&*oracle,
 			&*block_import,
 			&link,
 			Some(&*qdata),
@@ -314,8 +329,9 @@ pub enum BlockImportError {
 }
 
 /// Import a bunch of blocks.
-pub fn import_many_blocks<'a, B: BlockT, V: Verifier<B>>(
-	import_handle: &BlockImport<B, Error=ConsensusError>,
+pub fn import_many_blocks<'a, B: BlockT, V: Verifier<B>, O: ImportOracle<B, Error=ConsensusError>>(
+	oracle: &O,
+	import_handle: &BlockImport<B, Operation=O::Operation, Error=ConsensusError>,
 	link: &Link<B>,
 	qdata: Option<&AsyncImportQueueData<B>>,
 	blocks: (BlockOrigin, Vec<IncomingBlock<B>>),
@@ -339,6 +355,7 @@ pub fn import_many_blocks<'a, B: BlockT, V: Verifier<B>>(
 	// Blocks in the response/drain should be in ascending order.
 	for block in blocks {
 		let import_result = import_single_block(
+			oracle,
 			import_handle,
 			blocks_origin.clone(),
 			block,
@@ -362,8 +379,9 @@ pub fn import_many_blocks<'a, B: BlockT, V: Verifier<B>>(
 }
 
 /// Single block import function.
-pub fn import_single_block<B: BlockT, V: Verifier<B>>(
-	import_handle: &BlockImport<B,Error=ConsensusError>,
+pub fn import_single_block<B: BlockT, V: Verifier<B>, O: ImportOracle<B, Error=ConsensusError>>(
+	oracle: &O,
+	import_handle: &BlockImport<B, Operation=O::Operation, Error=ConsensusError>,
 	block_origin: BlockOrigin,
 	block: IncomingBlock<B>,
 	verifier: Arc<V>
@@ -396,7 +414,9 @@ pub fn import_single_block<B: BlockT, V: Verifier<B>>(
 			BlockImportError::VerificationFailed(peer, msg)
 		})?;
 
-	match import_handle.import_block(import_block, new_authorities) {
+	match oracle.begin(|operation| {
+		import_handle.import_block(operation, import_block, new_authorities)
+	}) {
 		Ok(ImportResult::AlreadyInChain) => {
 			trace!(target: "sync", "Block already in chain {}: {:?}", number, hash);
 			Ok(BlockImportResult::ImportedKnown(hash, number))
