@@ -89,7 +89,7 @@ use client::{
 };
 use client::blockchain::HeaderBackend;
 use codec::{Encode, Decode};
-use consensus_common::{BlockImport, Error as ConsensusError, ErrorKind as ConsensusErrorKind, ImportBlock, ImportResult, Authorities};
+use consensus_common::{BlockImport, ImportOracle, Error as ConsensusError, ErrorKind as ConsensusErrorKind, ImportBlock, ImportResult, Authorities};
 use runtime_primitives::traits::{
 	NumberFor, Block as BlockT, Header as HeaderT, DigestFor, ProvideRuntimeApi, Hash as HashT,
 	DigestItemFor, DigestItem, As, Zero,
@@ -934,180 +934,202 @@ pub struct GrandpaBlockImport<B, E, Block: BlockT<Hash=H256>, RA, PRA> {
 	api: Arc<PRA>,
 }
 
-impl<B, E, Block: BlockT<Hash=H256>, RA, PRA> BlockImport<Block>
-	for GrandpaBlockImport<B, E, Block, RA, PRA> where
-		NumberFor<Block>: grandpa::BlockNumberOps,
-		B: Backend<Block, Blake2Hasher> + 'static,
-		E: CallExecutor<Block, Blake2Hasher> + 'static + Clone + Send + Sync,
-		DigestFor<Block>: Encode,
-		DigestItemFor<Block>: DigestItem<AuthorityId=Ed25519AuthorityId>,
-		RA: Send + Sync,
-		PRA: ProvideRuntimeApi,
-		PRA::Api: GrandpaApi<Block>,
+impl<B, E, Block, RA, PRA> ImportOracle<Block> for GrandpaBlockImport<B, E, Block, RA, PRA> where
+	NumberFor<Block>: grandpa::BlockNumberOps,
+	B: Backend<Block, Blake2Hasher> + 'static,
+	E: CallExecutor<Block, Blake2Hasher> + Clone + Send + Sync + 'static,
+	Block: BlockT<Hash=H256>,
+	DigestFor<Block>: Encode,
+	DigestItemFor<Block>: DigestItem<AuthorityId=Ed25519AuthorityId>,
+	RA: Send + Sync,
+	PRA: ProvideRuntimeApi + Send + Sync,
+	PRA::Api: GrandpaApi<Block>,
 {
+	type Operation = B::BlockImportOperation;
 	type Error = ConsensusError;
 
-	fn import_block(&self, mut block: ImportBlock<Block>, new_authorities: Option<Vec<Ed25519AuthorityId>>)
-		-> Result<ImportResult, Self::Error>
+	fn begin<F: FnOnce(&mut Self::Operation) -> Result<(), Self::Error>>(&self, f: F) -> Result<ImportResult, Self::Error> {
+		self.inner.begin(f)
+	}
+}
+
+impl<B, E, Block, RA, PRA> BlockImport<Block> for GrandpaBlockImport<B, E, Block, RA, PRA> where
+	NumberFor<Block>: grandpa::BlockNumberOps,
+	B: Backend<Block, Blake2Hasher> + 'static,
+	E: CallExecutor<Block, Blake2Hasher> + Clone + Send + Sync + 'static,
+	Block: BlockT<Hash=H256>,
+	DigestFor<Block>: Encode,
+	DigestItemFor<Block>: DigestItem<AuthorityId=Ed25519AuthorityId>,
+	RA: Send + Sync,
+	PRA: ProvideRuntimeApi,
+	PRA::Api: GrandpaApi<Block>,
+{
+	type Operation = B::BlockImportOperation;
+	type Error = ConsensusError;
+
+	fn import_block(&self, operation: &mut Self::Operation, mut block: ImportBlock<Block>, new_authorities: Option<Vec<Ed25519AuthorityId>>)
+		-> Result<(), Self::Error>
 	{
-		use authorities::PendingChange;
+		unimplemented!();
 
-		let hash = block.post_header().hash();
-		let number = block.header.number().clone();
+		// use authorities::PendingChange;
 
-		let maybe_change = self.api.runtime_api().grandpa_pending_change(
-			&BlockId::hash(*block.header.parent_hash()),
-			&block.header.digest().clone(),
-		);
+		// let hash = block.post_header().hash();
+		// let number = block.header.number().clone();
 
-		let maybe_change = match maybe_change {
-			Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
-			Ok(maybe) => maybe,
-		};
+		// let maybe_change = self.api.runtime_api().grandpa_pending_change(
+		// 	&BlockId::hash(*block.header.parent_hash()),
+		// 	&block.header.digest().clone(),
+		// );
 
-		// when we update the authorities, we need to hold the lock
-		// until the block is written to prevent a race if we need to restore
-		// the old authority set on error.
-		let just_in_case = if let Some(change) = maybe_change {
-			let parent_hash = *block.header.parent_hash();
+		// let maybe_change = match maybe_change {
+		// 	Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
+		// 	Ok(maybe) => maybe,
+		// };
 
-			let mut authorities = self.authority_set.inner().write();
-			let old_set = authorities.clone();
+		// // when we update the authorities, we need to hold the lock
+		// // until the block is written to prevent a race if we need to restore
+		// // the old authority set on error.
+		// let just_in_case = if let Some(change) = maybe_change {
+		// 	let parent_hash = *block.header.parent_hash();
 
-			let is_equal_or_descendent_of = |base: &Block::Hash| -> Result<(), ConsensusError> {
-				let error = || {
-					Err(ConsensusErrorKind::ClientImport("Incorrect base hash".to_string()).into())
-				};
+		// 	let mut authorities = self.authority_set.inner().write();
+		// 	let old_set = authorities.clone();
 
-				if *base == hash { return error(); }
-				if *base == parent_hash { return error(); }
+		// 	let is_equal_or_descendent_of = |base: &Block::Hash| -> Result<(), ConsensusError> {
+		// 		let error = || {
+		// 			Err(ConsensusErrorKind::ClientImport("Incorrect base hash".to_string()).into())
+		// 		};
 
-				let tree_route = ::client::blockchain::tree_route(
-					self.inner.backend().blockchain(),
-					BlockId::Hash(parent_hash),
-					BlockId::Hash(*base),
-				);
+		// 		if *base == hash { return error(); }
+		// 		if *base == parent_hash { return error(); }
 
-				let tree_route = match tree_route {
-					Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
-					Ok(route) => route,
-				};
+		// 		let tree_route = ::client::blockchain::tree_route(
+		// 			self.inner.backend().blockchain(),
+		// 			BlockId::Hash(parent_hash),
+		// 			BlockId::Hash(*base),
+		// 		);
 
-				if tree_route.common_block().hash == *base {
-					return error();
-				}
+		// 		let tree_route = match tree_route {
+		// 			Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
+		// 			Ok(route) => route,
+		// 		};
 
-				Ok(())
-			};
+		// 		if tree_route.common_block().hash == *base {
+		// 			return error();
+		// 		}
 
-			authorities.add_pending_change(
-				PendingChange {
-					next_authorities: change.next_authorities,
-					finalization_depth: change.delay,
-					canon_height: number,
-					canon_hash: hash,
-				},
-				is_equal_or_descendent_of,
-			)?;
+		// 		Ok(())
+		// 	};
 
-			block.auxiliary.push((AUTHORITY_SET_KEY.to_vec(), Some(authorities.encode())));
-			Some((old_set, authorities))
-		} else {
-			None
-		};
+		// 	authorities.add_pending_change(
+		// 		PendingChange {
+		// 			next_authorities: change.next_authorities,
+		// 			finalization_depth: change.delay,
+		// 			canon_height: number,
+		// 			canon_hash: hash,
+		// 		},
+		// 		is_equal_or_descendent_of,
+		// 	)?;
 
-		// we don't want to finalize on `inner.import_block`
-		let justification = block.justification.take();
-		let enacts_consensus_change = new_authorities.is_some();
-		let import_result = self.inner.import_block(block, new_authorities).map_err(|e| {
-			if let Some((old_set, mut authorities)) = just_in_case {
-				debug!(target: "afg", "Restoring old set after block import error: {:?}", e);
-				*authorities = old_set;
-			}
-			e
-		});
+		// 	block.auxiliary.push((AUTHORITY_SET_KEY.to_vec(), Some(authorities.encode())));
+		// 	Some((old_set, authorities))
+		// } else {
+		// 	None
+		// };
 
-		let import_result = match import_result {
-			Ok(ImportResult::Queued) => ImportResult::Queued,
-			Ok(r) => return Ok(r),
-			Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
-		};
+		// // we don't want to finalize on `inner.import_block`
+		// let justification = block.justification.take();
+		// let enacts_consensus_change = new_authorities.is_some();
+		// let import_result = self.inner.import_block(operation, block, new_authorities).map_err(|e| {
+		// 	if let Some((old_set, mut authorities)) = just_in_case {
+		// 		debug!(target: "afg", "Restoring old set after block import error: {:?}", e);
+		// 		*authorities = old_set;
+		// 	}
+		// 	e
+		// });
 
-		let enacts_change = self.authority_set.inner().read().enacts_change(number, |canon_number| {
-			canonical_at_height(&self.inner, (hash, number), canon_number)
-		}).map_err(|e| ConsensusError::from(ConsensusErrorKind::ClientImport(e.to_string())))?;
+		// let import_result = match import_result {
+		// 	Ok(ImportResult::Queued) => ImportResult::Queued,
+		// 	Ok(r) => return Ok(r),
+		// 	Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
+		// };
 
-		if !enacts_change && !enacts_consensus_change {
-			return Ok(import_result);
-		}
+		// let enacts_change = self.authority_set.inner().read().enacts_change(number, |canon_number| {
+		// 	canonical_at_height(&self.inner, (hash, number), canon_number)
+		// }).map_err(|e| ConsensusError::from(ConsensusErrorKind::ClientImport(e.to_string())))?;
 
-		match justification {
-			Some(justification) => {
-				let justification = GrandpaJustification::decode_and_verify(
-					justification,
-					self.authority_set.set_id(),
-					&self.authority_set.current_authorities(),
-				);
+		// if !enacts_change && !enacts_consensus_change {
+		// 	return Ok(import_result);
+		// }
 
-				let justification = match justification {
-					Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
-					Ok(justification) => justification,
-				};
+		// match justification {
+		// 	Some(justification) => {
+		// 		let justification = GrandpaJustification::decode_and_verify(
+		// 			justification,
+		// 			self.authority_set.set_id(),
+		// 			&self.authority_set.current_authorities(),
+		// 		);
 
-				let result = finalize_block(
-					&*self.inner,
-					&self.authority_set,
-					&self.consensus_changes,
-					None,
-					hash,
-					number,
-					justification.into(),
-				);
+		// 		let justification = match justification {
+		// 			Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into()),
+		// 			Ok(justification) => justification,
+		// 		};
 
-				match result {
-					Ok(_) => {
-						assert!(!enacts_change, "returns Ok when no authority set change should be enacted; qed;");
-					},
-					Err(ExitOrError::AuthoritiesChanged(new)) => {
-						assert!(
-							enacts_change,
-							"returns AuthoritiesChanged when authority set change should be enacted; qed;"
-						);
+		// 		let result = finalize_block(
+		// 			&*self.inner,
+		// 			&self.authority_set,
+		// 			&self.consensus_changes,
+		// 			None,
+		// 			hash,
+		// 			number,
+		// 			justification.into(),
+		// 		);
 
-						debug!(target: "finality", "Imported justified block #{} that enacts authority set change, signalling voter.", number);
-						if let Err(e) = self.authority_set_change.unbounded_send(new) {
-							return Err(ConsensusErrorKind::ClientImport(e.to_string()).into());
-						}
-					},
-					Err(ExitOrError::Error(e)) => {
-						match e {
-							Error::Grandpa(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
-							Error::Network(error) => return Err(ConsensusErrorKind::ClientImport(error).into()),
-							Error::Blockchain(error) => return Err(ConsensusErrorKind::ClientImport(error).into()),
-							Error::Client(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
-							Error::Timer(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
-						}
-					},
-				}
-			},
-			None => {
-				if enacts_change {
-					trace!(
-						target: "finality",
-						"Imported unjustified block #{} that enacts authority set change, waiting for finality for enactment.",
-						number,
-					);
-				}
+		// 		match result {
+		// 			Ok(_) => {
+		// 				assert!(!enacts_change, "returns Ok when no authority set change should be enacted; qed;");
+		// 			},
+		// 			Err(ExitOrError::AuthoritiesChanged(new)) => {
+		// 				assert!(
+		// 					enacts_change,
+		// 					"returns AuthoritiesChanged when authority set change should be enacted; qed;"
+		// 				);
 
-				// we have imported block with consensus data changes, but without justification
-				// => remember to create justification when next block will be finalized
-				if enacts_consensus_change {
-					self.consensus_changes.lock().note_change((number, hash));
-				}
-			},
-		}
+		// 				debug!(target: "finality", "Imported justified block #{} that enacts authority set change, signalling voter.", number);
+		// 				if let Err(e) = self.authority_set_change.unbounded_send(new) {
+		// 					return Err(ConsensusErrorKind::ClientImport(e.to_string()).into());
+		// 				}
+		// 			},
+		// 			Err(ExitOrError::Error(e)) => {
+		// 				match e {
+		// 					Error::Grandpa(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
+		// 					Error::Network(error) => return Err(ConsensusErrorKind::ClientImport(error).into()),
+		// 					Error::Blockchain(error) => return Err(ConsensusErrorKind::ClientImport(error).into()),
+		// 					Error::Client(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
+		// 					Error::Timer(error) => return Err(ConsensusErrorKind::ClientImport(error.to_string()).into()),
+		// 				}
+		// 			},
+		// 		}
+		// 	},
+		// 	None => {
+		// 		if enacts_change {
+		// 			trace!(
+		// 				target: "finality",
+		// 				"Imported unjustified block #{} that enacts authority set change, waiting for finality for enactment.",
+		// 				number,
+		// 			);
+		// 		}
 
-		Ok(import_result)
+		// 		// we have imported block with consensus data changes, but without justification
+		// 		// => remember to create justification when next block will be finalized
+		// 		if enacts_consensus_change {
+		// 			self.consensus_changes.lock().note_change((number, hash));
+		// 		}
+		// 	},
+		// }
+
+		// Ok(import_result)
 	}
 }
 

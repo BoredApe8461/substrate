@@ -61,7 +61,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use codec::Encode;
-use consensus_common::{Authorities, BlockImport, Environment, Error as ConsensusError, Proposer, ForkChoiceStrategy};
+use consensus_common::{Authorities, BlockImport, ImportOracle, Environment, Error as ConsensusError, Proposer, ForkChoiceStrategy};
 use consensus_common::import_queue::{Verifier, BasicQueue};
 use client::ChainHead;
 use client::block_builder::api::BlockBuilder as BlockBuilderApi;
@@ -162,11 +162,11 @@ pub fn start_aura_thread<B, C, E, I, SO, Error>(
 	on_exit: impl Future<Item=(),Error=()> + Send + 'static,
 ) where
 	B: Block + 'static,
-	C: Authorities<B> + ChainHead<B> + Send + Sync + 'static,
+	C: ImportOracle<B> + Authorities<B> + ChainHead<B> + Send + Sync + 'static,
 	E: Environment<B, AuraConsensusData, Error=Error> + Send + Sync + 'static,
 	E::Proposer: Proposer<B, AuraConsensusData, Error=Error> + 'static,
-	I: BlockImport<B> + Send + Sync + 'static,
-	Error: From<C::Error> + From<I::Error> + 'static,
+	I: BlockImport<B, Operation=C::Operation, Error=<C as ImportOracle<B>>::Error> + Send + Sync + 'static,
+	Error: From<<C as Authorities<B>>::Error> + From<<C as ImportOracle<B>>::Error> + From<I::Error> + 'static,
 	SO: SyncOracle + Send + Clone + 'static,
 	DigestItemFor<B>: CompatibleDigestItem + DigestItem<AuthorityId=Ed25519AuthorityId> + 'static,
 	Error: ::std::error::Error + Send + From<::consensus_common::Error> + 'static,
@@ -205,11 +205,11 @@ pub fn start_aura<B, C, E, I, SO, Error>(
 	on_exit: impl Future<Item=(),Error=()>,
 ) -> impl Future<Item=(),Error=()> where
 	B: Block,
-	C: Authorities<B> + ChainHead<B>,
+	C: ImportOracle<B> + Authorities<B> + ChainHead<B>,
 	E: Environment<B, AuraConsensusData, Error=Error>,
 	E::Proposer: Proposer<B, AuraConsensusData, Error=Error>,
-	I: BlockImport<B>,
-	Error: From<C::Error> + From<I::Error>,
+	I: BlockImport<B, Operation=C::Operation, Error=<C as ImportOracle<B>>::Error>,
+	Error: From<<C as Authorities<B>>::Error> + From<<C as ImportOracle<B>>::Error> + From<I::Error>,
 	SO: SyncOracle + Send + Clone,
 	DigestItemFor<B>: CompatibleDigestItem + DigestItem<AuthorityId=Ed25519AuthorityId>,
 	Error: ::std::error::Error + Send + 'static + From<::consensus_common::Error>,
@@ -334,7 +334,9 @@ pub fn start_aura<B, C, E, I, SO, Error>(
 							pre_hash
 						);
 
-						if let Err(e) = block_import.import_block(import_block, None) {
+						if let Err(e) = client.begin(|operation| {
+							block_import.import_block(operation, import_block, None)
+						}) {
 							warn!(target: "aura", "Error with block built on {:?}: {:?}",
 								parent_hash, e);
 						}
@@ -555,7 +557,7 @@ pub fn make_basic_inherent(timestamp: u64, slot_now: u64) -> BasicInherentData {
 pub type InherentProducingFn<I> = fn(u64, u64) -> I;
 
 /// The Aura import queue type.
-pub type AuraImportQueue<B, C, E, MakeInherent> = BasicQueue<B, AuraVerifier<C, E, MakeInherent>>;
+pub type AuraImportQueue<B, C, E, MakeInherent> = BasicQueue<B, AuraVerifier<C, E, MakeInherent>, C>;
 
 /// A slot duration. Create with `get_or_compute`.
 // The internal member should stay private here.
@@ -605,14 +607,14 @@ pub fn import_queue<B, C, E, MakeInherent, Inherent>(
 	make_inherent: MakeInherent,
 ) -> AuraImportQueue<B, C, E, MakeInherent> where
 	B: Block,
-	C: Authorities<B> + BlockImport<B,Error=ConsensusError> + ProvideRuntimeApi + Send + Sync,
+	C: Authorities<B> + BlockImport<B, Operation=<C as ImportOracle<B>>::Operation, Error=ConsensusError> + ImportOracle<B, Error=ConsensusError> + ProvideRuntimeApi + Send + Sync,
 	C::Api: BlockBuilderApi<B, Inherent>,
 	DigestItemFor<B>: CompatibleDigestItem + DigestItem<AuthorityId=Ed25519AuthorityId>,
 	E: ExtraVerification<B>,
 	MakeInherent: Fn(u64, u64) -> Inherent + Send + Sync,
 {
 	let verifier = Arc::new(AuraVerifier { slot_duration, client: client.clone(), extra, make_inherent });
-	BasicQueue::new(verifier, client)
+	BasicQueue::new(verifier, client.clone(), client)
 }
 
 #[cfg(test)]
