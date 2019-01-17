@@ -1034,6 +1034,19 @@ impl<B, E, Block, RA> CallRuntimeAt<Block> for Client<B, E, Block, RA> where
 	}
 }
 
+impl<B, E, Block, RA> consensus::ImportOracle<Block> for Client<B, E, Block, RA> where
+	B: backend::Backend<Block, Blake2Hasher>,
+	E: CallExecutor<Block, Blake2Hasher> + Clone + Send + Sync,
+	Block: BlockT<Hash=H256>,
+	RA: Send + Sync,
+{
+	type Error = ConsensusError;
+	type Operation = B::BlockImportOperation;
+
+	fn begin<F: FnOnce(&mut Self::Operation) -> Result<(), Self::Error>>(&self, f: F) -> Result<ImportResult, Self::Error> {
+		unimplemented!();
+	}
+}
 
 impl<B, E, Block, RA> consensus::BlockImport<Block> for Client<B, E, Block, RA> where
 	B: backend::Backend<Block, Blake2Hasher>,
@@ -1041,71 +1054,75 @@ impl<B, E, Block, RA> consensus::BlockImport<Block> for Client<B, E, Block, RA> 
 	Block: BlockT<Hash=H256>,
 {
 	type Error = ConsensusError;
+	type Operation = B::BlockImportOperation;
 
 	/// Import a checked and validated block. If a justification is provided in
 	/// `ImportBlock` then `finalized` *must* be true.
 	fn import_block(
 		&self,
+		operation: &mut Self::Operation,
 		import_block: ImportBlock<Block>,
 		new_authorities: Option<Vec<AuthorityIdFor<Block>>>,
-	) -> Result<ImportResult, Self::Error> {
-		use runtime_primitives::traits::Digest;
+	) -> Result<(), Self::Error> {
+		unimplemented!();
 
-		let ImportBlock {
-			origin,
-			header,
-			justification,
-			post_digests,
-			body,
-			finalized,
-			auxiliary,
-			fork_choice,
-		} = import_block;
+		// use runtime_primitives::traits::Digest;
 
-		assert!(justification.is_some() && finalized || justification.is_none());
+		// let ImportBlock {
+		// 	origin,
+		// 	header,
+		// 	justification,
+		// 	post_digests,
+		// 	body,
+		// 	finalized,
+		// 	auxiliary,
+		// 	fork_choice,
+		// } = import_block;
 
-		let parent_hash = header.parent_hash().clone();
+		// assert!(justification.is_some() && finalized || justification.is_none());
 
-		match self.backend.blockchain().status(BlockId::Hash(parent_hash)) {
-			Ok(blockchain::BlockStatus::InChain) => {},
-			Ok(blockchain::BlockStatus::Unknown) => return Ok(ImportResult::UnknownParent),
-            Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into())
-		}
+		// let parent_hash = header.parent_hash().clone();
 
-		let import_headers = if post_digests.is_empty() {
-			PrePostHeader::Same(header)
-		} else {
-			let mut post_header = header.clone();
-			for item in post_digests {
-				post_header.digest_mut().push(item);
-			}
-			PrePostHeader::Different(header, post_header)
-		};
+		// match self.backend.blockchain().status(BlockId::Hash(parent_hash)) {
+		// 	Ok(blockchain::BlockStatus::InChain) => {},
+		// 	Ok(blockchain::BlockStatus::Unknown) => return Ok(ImportResult::UnknownParent),
+        //     Err(e) => return Err(ConsensusErrorKind::ClientImport(e.to_string()).into())
+		// }
 
-		let hash = import_headers.post().hash();
-		let _import_lock = self.import_lock.lock();
-		let height: u64 = import_headers.post().number().as_();
-		*self.importing_block.write() = Some(hash);
+		// let import_headers = if post_digests.is_empty() {
+		// 	PrePostHeader::Same(header)
+		// } else {
+		// 	let mut post_header = header.clone();
+		// 	for item in post_digests {
+		// 		post_header.digest_mut().push(item);
+		// 	}
+		// 	PrePostHeader::Different(header, post_header)
+		// };
 
-		let result = self.execute_and_import_block(
-			origin,
-			hash,
-			import_headers,
-			justification,
-			body,
-			new_authorities,
-			finalized,
-			auxiliary,
-			fork_choice,
-		);
+		// let hash = import_headers.post().hash();
+		// let _import_lock = self.import_lock.lock();
+		// let height: u64 = import_headers.post().number().as_();
+		// *self.importing_block.write() = Some(hash);
 
-		*self.importing_block.write() = None;
-		telemetry!("block.import";
-			"height" => height,
-			"best" => ?hash,
-			"origin" => ?origin
-		);
-		result.map_err(|e| ConsensusErrorKind::ClientImport(e.to_string()).into())
+		// let result = self.execute_and_import_block(
+		// 	origin,
+		// 	hash,
+		// 	import_headers,
+		// 	justification,
+		// 	body,
+		// 	new_authorities,
+		// 	finalized,
+		// 	auxiliary,
+		// 	fork_choice,
+		// );
+
+		// *self.importing_block.write() = None;
+		// telemetry!("block.import";
+		// 	"height" => height,
+		// 	"best" => ?hash,
+		// 	"origin" => ?origin
+		// );
+		// result.map_err(|e| ConsensusErrorKind::ClientImport(e.to_string()).into())
 	}
 }
 
