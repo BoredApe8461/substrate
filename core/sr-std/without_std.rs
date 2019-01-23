@@ -18,7 +18,7 @@
 #[doc(hidden)]
 pub extern crate alloc;
 
-extern "C" {
+#[no_mangle] extern "C" {
 	fn ext_malloc(size: usize) -> *mut u8;
 	fn ext_free(ptr: *mut u8);
 }

@@ -57,7 +57,7 @@ pub extern fn oom(_: ::core::alloc::Layout) -> ! {
 /// A WebAssembly runtime module would "import" these to access the execution environment
 /// (most importantly, storage) or perform heavy hash calculations.
 /// See also "ext_" functions in sr-sandbox and sr-std
-extern "C" {
+#[no_mangle] extern "C" {
 	/// Most of the functions below return fixed-size arrays (e.g. hashes) by writing them into
 	/// memory regions that should be preallocated by module. 
 	/// Functions that return variable-sized data use host-side allocations. These should be

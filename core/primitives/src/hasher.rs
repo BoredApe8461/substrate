@@ -26,7 +26,7 @@ pub mod blake2 {
 	use hashing::blake2_256;
 
 	#[cfg(not(feature = "std"))]
-	extern "C" {
+	#[no_mangle] extern "C" {
 		fn ext_blake2_256(data: *const u8, len: u32, out: *mut u8);
 	}
 	#[cfg(not(feature = "std"))]
