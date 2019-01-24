@@ -27,5 +27,7 @@ fn main() {
 		println!("cargo:rustc-env={}={}", k.name(), v);
 	}
 
+	println!("cargo:rustc-link-lib=node_runtime");
+
 	println!("cargo:rerun-if-changed=.git/HEAD");
 }
