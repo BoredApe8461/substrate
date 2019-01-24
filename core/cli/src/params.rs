@@ -105,7 +105,7 @@ pub struct CoreParams {
 	#[structopt(long = "telemetry-url", value_name = "TELEMETRY_URL")]
 	telemetry_url: Option<String>,
 
-	/// The means of execution used when calling into the runtime. Can be either wasm, native or both.
+	/// The means of execution used when calling into the runtime. Can be either wasm, native, nativeElseWasm or both.
 	#[structopt(long = "execution", value_name = "STRATEGY")]
 	execution: Option<ExecutionStrategy>,
 
@@ -126,6 +126,8 @@ pub enum ExecutionStrategy {
 	Wasm,
 	/// Execute natively when possible, wasm otherwise
 	Both,
+	/// First native, then if that fails or is not possible, wasm.
+	NativeElseWasm,
 }
 
 impl Default for ExecutionStrategy {
@@ -141,7 +143,8 @@ impl std::str::FromStr for ExecutionStrategy {
 			"native" => Ok(ExecutionStrategy::Native),
 			"wasm" | "webassembly" => Ok(ExecutionStrategy::Wasm),
 			"both" => Ok(ExecutionStrategy::Both),
-			_ => Err("Please specify either 'native', 'wasm' or 'both".to_owned())
+			"nativeElseWasm" => Ok(ExecutionStrategy::NativeElseWasm),
+			_ => Err("Please specify either 'native', 'wasm', 'nativeElseWasm' or 'both".to_owned())
 
 		}
 	}
@@ -205,11 +208,11 @@ pub enum CoreCommands {
 		#[structopt(parse(from_os_str))]
 		input: Option<PathBuf>,
 
-		/// The means of execution used when executing blocks. Can be either wasm, native or both.
+		/// The means of execution used when executing blocks. Can be either wasm, native, nativeElseWasm or both.
 		#[structopt(long = "execution", value_name = "STRATEGY")]
 		execution: ExecutionStrategy,
 
-		/// The means of execution used when calling into the runtime. Can be either wasm, native or both.
+		/// The means of execution used when calling into the runtime. Can be either wasm, native, nativeElseWasm or both.
 		#[structopt(long = "api-execution", value_name = "STRATEGY")]
 		api_execution: ExecutionStrategy,
 

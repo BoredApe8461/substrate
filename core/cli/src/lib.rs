@@ -222,13 +222,13 @@ where
 
 	let role =
 		if matches.is_present("light") {
-			config.block_execution_strategy = service::ExecutionStrategy::NativeWhenPossible;
+			config.block_execution_strategy = service::ExecutionStrategy::NativeElseWasm;
 			service::Roles::LIGHT
 		} else if matches.is_present("validator") || matches.is_present("dev") {
 			config.block_execution_strategy = service::ExecutionStrategy::Both;
 			service::Roles::AUTHORITY
 		} else {
-			config.block_execution_strategy = service::ExecutionStrategy::NativeWhenPossible;
+			config.block_execution_strategy = service::ExecutionStrategy::NativeElseWasm;
 			service::Roles::FULL
 		};
 
@@ -237,6 +237,7 @@ where
 			"both" => service::ExecutionStrategy::Both,
 			"native" => service::ExecutionStrategy::NativeWhenPossible,
 			"wasm" => service::ExecutionStrategy::AlwaysWasm,
+			"nativeElseWasm" => service::ExecutionStrategy::NativeElseWasm,
 			_ => bail!(create_input_err("Invalid execution mode specified")),
 		};
 	}
@@ -460,6 +461,7 @@ fn import_blocks<F, E>(
 			"both" => service::ExecutionStrategy::Both,
 			"native" => service::ExecutionStrategy::NativeWhenPossible,
 			"wasm" => service::ExecutionStrategy::AlwaysWasm,
+			"nativeElseWasm" => service::ExecutionStrategy::NativeElseWasm,
 			_ => return Err(error::ErrorKind::Input("Invalid block execution mode specified".to_owned()).into()),
 		};
 	}
@@ -469,6 +471,7 @@ fn import_blocks<F, E>(
 			"both" => service::ExecutionStrategy::Both,
 			"native" => service::ExecutionStrategy::NativeWhenPossible,
 			"wasm" => service::ExecutionStrategy::AlwaysWasm,
+			"nativeElseWasm" => service::ExecutionStrategy::NativeElseWasm,
 			_ => return Err(error::ErrorKind::Input("Invalid API execution mode specified".to_owned()).into()),
 		};
 	}
