@@ -105,9 +105,17 @@ pub struct CoreParams {
 	#[structopt(long = "telemetry-url", value_name = "TELEMETRY_URL")]
 	telemetry_url: Option<String>,
 
-	/// The means of execution used when calling into the runtime. Can be either wasm, native, nativeElseWasm or both.
-	#[structopt(long = "execution", value_name = "STRATEGY")]
-	execution: Option<ExecutionStrategy>,
+	/// The execution strategy when syncing. Can be either wasm, native, native-else-wasm or both. Default is native-else-wasm.
+	#[structopt(long = "syncing-execution", value_name = "STRATEGY")]
+	syncing_execution: Option<ExecutionStrategy>,
+
+	/// The execution strategy when importing blocks. Can be either wasm, native, native-else-wasm or both. Default is native-else-wasm.
+	#[structopt(long = "importing-execution", value_name = "STRATEGY")]
+	importing_execution: Option<ExecutionStrategy>,
+
+	/// The execution strategy when constructing blocks. Can be either wasm, native, native-else-wasm or both. Default is wasm.
+	#[structopt(long = "block-construction-execution", value_name = "STRATEGY")]
+	block_construction_execution: Option<ExecutionStrategy>,
 
 	#[allow(missing_docs)]
 	#[structopt(flatten)]
@@ -143,8 +151,8 @@ impl std::str::FromStr for ExecutionStrategy {
 			"native" => Ok(ExecutionStrategy::Native),
 			"wasm" | "webassembly" => Ok(ExecutionStrategy::Wasm),
 			"both" => Ok(ExecutionStrategy::Both),
-			"nativeElseWasm" => Ok(ExecutionStrategy::NativeElseWasm),
-			_ => Err("Please specify either 'native', 'wasm', 'nativeElseWasm' or 'both".to_owned())
+			"native-else-wasm" => Ok(ExecutionStrategy::NativeElseWasm),
+			_ => Err("Please specify either 'native', 'wasm', 'native-else-wasm' or 'both".to_owned())
 
 		}
 	}

@@ -26,7 +26,7 @@ use std::sync::Arc;
 use primitives::{H256, Blake2Hasher};
 use runtime_primitives::BuildStorage;
 use runtime_primitives::traits::Block as BlockT;
-use state_machine::{CodeExecutor, ExecutionStrategy};
+use state_machine::CodeExecutor;
 
 use crate::client::Client;
 use crate::error::Result as ClientResult;
@@ -61,7 +61,7 @@ where
 
 {
 	let executor = RemoteCallExecutor::new(backend.blockchain().clone(), fetcher);
-	Client::new(backend, executor, genesis_storage, ExecutionStrategy::NativeElseWasm, ExecutionStrategy::NativeElseWasm)
+	Client::new(backend, executor, genesis_storage, Default::default())
 }
 
 /// Create an instance of fetch data checker.

@@ -445,8 +445,7 @@ impl<Factory: ServiceFactory> Components for FullComponents<Factory> {
 			db_settings,
 			executor,
 			&config.chain_spec,
-			config.block_execution_strategy,
-			config.api_execution_strategy,
+			config.execution_strategies.clone(),
 		)?), None))
 	}
 
